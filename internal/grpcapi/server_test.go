@@ -33,7 +33,10 @@ func TestGetPosition(t *testing.T) {
 }
 
 func TestGetPositionStatusMappings(t *testing.T) {
-	server := &Server{Store: &store.MemoryStore{Positions: map[string][]domain.Lot{}}}
+	price, _ := money.Parse("19.990000")
+	server := &Server{Store: &store.MemoryStore{Positions: map[string][]domain.Lot{
+		"acct\x00HOOD": {{Quantity: 10, Price: price}},
+	}}}
 	_, err := server.GetPosition(context.Background(), &portfoliov1.GetPositionRequest{
 		AccountId: "acct",
 		Symbol:    "NOPE",
@@ -43,10 +46,18 @@ func TestGetPositionStatusMappings(t *testing.T) {
 	}
 	_, err = server.GetPosition(context.Background(), &portfoliov1.GetPositionRequest{
 		AccountId: "acct",
-		Symbol:    "NOPE",
+		Symbol:    "HOOD",
 		Mark:      "not-a-number",
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("invalid mark code = %s", status.Code(err))
+	}
+	_, err = server.GetPosition(context.Background(), &portfoliov1.GetPositionRequest{
+		AccountId: "acct",
+		Symbol:    "NOPE",
+		Mark:      "not-a-number",
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("unknown position precedence code = %s", status.Code(err))
 	}
 }

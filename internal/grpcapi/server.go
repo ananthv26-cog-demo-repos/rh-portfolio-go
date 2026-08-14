@@ -21,14 +21,6 @@ func (s *Server) GetPosition(ctx context.Context, request *portfoliov1.GetPositi
 	if request == nil || strings.TrimSpace(request.GetAccountId()) == "" || strings.TrimSpace(request.GetSymbol()) == "" {
 		return nil, status.Error(codes.InvalidArgument, "account_id and symbol are required")
 	}
-	markText := request.GetMark()
-	if markText == "" {
-		markText = "0"
-	}
-	mark, err := money.ParseMark(markText)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "mark must be a decimal")
-	}
 	symbol := strings.ToUpper(request.GetSymbol())
 	lots, err := s.Store.Lots(ctx, request.GetAccountId(), symbol)
 	if err != nil {
@@ -37,15 +29,31 @@ func (s *Server) GetPosition(ctx context.Context, request *portfoliov1.GetPositi
 	if len(lots) == 0 {
 		return nil, status.Error(codes.NotFound, "position not found")
 	}
+	markText := request.GetMark()
+	if markText == "" {
+		markText = "0"
+	}
+	mark, err := money.ParseMark(markText)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "mark must be a decimal")
+	}
 	averageCost, err := domain.AverageCost(lots)
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
+	averageCostText, err := averageCost.StringFixedChecked(4)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid position")
+	}
+	pnlText, err := unrealizedPnlChecked(lots, mark)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "mark exceeds decimal precision")
+	}
 	return &portfoliov1.Position{
 		Symbol:        symbol,
 		Quantity:      domain.NetQuantity(lots),
-		AverageCost:   averageCost.StringFixed(4),
-		UnrealizedPnl: unrealizedPnl(lots, mark),
+		AverageCost:   averageCostText,
+		UnrealizedPnl: pnlText,
 	}, nil
 }
 
@@ -57,4 +65,18 @@ func unrealizedPnl(lots []domain.Lot, mark money.Mark) string {
 		return "NaN"
 	}
 	return domain.UnrealizedPnL(lots, mark.Value).StringFixed(2)
+}
+
+func unrealizedPnlChecked(lots []domain.Lot, mark money.Mark) (string, error) {
+	if mark.NaN {
+		if mark.NegativeNaN {
+			return "-NaN", nil
+		}
+		return "NaN", nil
+	}
+	value, err := domain.UnrealizedPnLChecked(lots, mark.Value)
+	if err != nil {
+		return "", err
+	}
+	return value.StringFixedChecked(2)
 }

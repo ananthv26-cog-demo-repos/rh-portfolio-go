@@ -94,3 +94,13 @@ func TestNegativeZeroOnlyComesFromRounding(t *testing.T) {
 		t.Fatalf("exact zero = %q", got)
 	}
 }
+
+func TestResidualBeyondRetainedScaleBreaksHalfEvenTieAwayFromZero(t *testing.T) {
+	value, err := Parse("1.2346500000000000000000000001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := value.StringFixed(4); got != "1.2347" {
+		t.Fatalf("residual tie = %q, want 1.2347", got)
+	}
+}

@@ -61,7 +61,12 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 		}
 		pnl := "NaN"
 		if !mark.NaN {
-			pnl = domain.UnrealizedPnL(lots, mark.Value).StringFixed(2)
+			pnlValue, err := domain.UnrealizedPnLChecked(lots, mark.Value)
+			if err != nil {
+				writeError(writer, http.StatusInternalServerError, "invalid mark")
+				return
+			}
+			pnl = pnlValue.StringFixed(2)
 		} else if mark.NegativeNaN {
 			pnl = "-NaN"
 		}

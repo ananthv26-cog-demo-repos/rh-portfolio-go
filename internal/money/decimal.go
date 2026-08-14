@@ -7,12 +7,19 @@ import (
 )
 
 var ErrInvalidDecimal = errors.New("invalid decimal")
+var ErrPrecision = errors.New("decimal exceeds CPython context.prec=28")
+
+const (
+	pythonDecimalPrecision = 28
+	maxRetainedScale       = 80
+)
 
 // Decimal stores an exact decimal as an integer coefficient and a decimal scale.
 type Decimal struct {
 	coefficient  *big.Int
 	scale        int
 	negativeZero bool
+	inexact      bool
 }
 
 type Mark struct {
@@ -98,8 +105,31 @@ func Parse(text string) (Decimal, error) {
 	}
 	scale := len(fraction) - exponent
 	if scale < 0 {
+		if scale < -60 {
+			return Decimal{}, ErrInvalidDecimal
+		}
 		coefficient.Mul(coefficient, tenTo(-scale))
 		scale = 0
+	}
+	inexact := false
+	if scale > maxRetainedScale {
+		drop := scale - maxRetainedScale
+		nonzero := coefficient.Sign() != 0
+		if drop >= len(coefficient.String()) {
+			coefficient.SetInt64(0)
+			inexact = nonzero
+		} else {
+			divisor := tenTo(drop)
+			quotient, remainder := new(big.Int).QuoRem(coefficient, divisor, new(big.Int))
+			coefficient = quotient
+			inexact = remainder.Sign() != 0
+		}
+		scale = maxRetainedScale
+		return Decimal{
+			coefficient: coefficient,
+			scale:       scale,
+			inexact:     inexact,
+		}, nil
 	}
 	return Decimal{coefficient: coefficient, scale: scale}, nil
 }
@@ -119,7 +149,7 @@ func (d Decimal) Add(other Decimal) Decimal {
 	left := scaledCoefficient(d, scale)
 	right := scaledCoefficient(other, scale)
 	left.Add(left, right)
-	return Decimal{coefficient: left, scale: scale}
+	return Decimal{coefficient: left, scale: scale, inexact: d.inexact || other.inexact}
 }
 
 func (d Decimal) Sub(other Decimal) Decimal {
@@ -130,24 +160,46 @@ func (d Decimal) Sub(other Decimal) Decimal {
 	left := scaledCoefficient(d, scale)
 	right := scaledCoefficient(other, scale)
 	left.Sub(left, right)
-	return Decimal{coefficient: left, scale: scale}
+	return Decimal{coefficient: left, scale: scale, inexact: d.inexact || other.inexact}
 }
 
 func (d Decimal) MulInt64(value int64) Decimal {
 	coefficient := new(big.Int).Mul(d.coefficient, big.NewInt(value))
-	return Decimal{coefficient: coefficient, scale: d.scale}
+	return Decimal{
+		coefficient: coefficient,
+		scale:       d.scale,
+		inexact:     d.inexact,
+	}
 }
 
 func (d Decimal) Quantize(scale int) Decimal {
+	value, _ := d.QuantizeChecked(scale)
+	return value
+}
+
+func (d Decimal) QuantizeChecked(scale int) (Decimal, error) {
+	var value Decimal
 	if scale >= d.scale {
 		coefficient := new(big.Int).Mul(d.coefficient, tenTo(scale-d.scale))
-		return Decimal{coefficient: coefficient, scale: scale, negativeZero: d.negativeZero}
+		value = Decimal{
+			coefficient:  coefficient,
+			scale:        scale,
+			negativeZero: d.negativeZero,
+			inexact:      d.inexact,
+		}
+		return checkPrecision(value)
 	}
-	return roundRatio(d.coefficient, tenTo(d.scale-scale), scale)
+	return roundRatio(d.coefficient, tenTo(d.scale-scale), scale, d.inexact)
 }
 
 // DivideQuantized divides d by divisor and rounds the result to scale places.
 func (d Decimal) DivideQuantized(divisor int64, scale int) Decimal {
+	value, _ := d.DivideQuantizedChecked(divisor, scale)
+	return value
+}
+
+// DivideQuantizedChecked divides d by divisor and reports context precision errors.
+func (d Decimal) DivideQuantizedChecked(divisor int64, scale int) (Decimal, error) {
 	if divisor == 0 {
 		panic("division by zero")
 	}
@@ -157,32 +209,48 @@ func (d Decimal) DivideQuantized(divisor int64, scale int) Decimal {
 		numerator.Neg(numerator)
 		denominator.Neg(denominator)
 	}
-	return roundRatio(numerator, denominator, scale)
+	return roundRatio(numerator, denominator, scale, d.inexact)
 }
 
 func (d Decimal) StringFixed(scale int) string {
-	quantized := d.Quantize(scale)
-	negative := quantized.coefficient.Sign() < 0 || (quantized.coefficient.Sign() == 0 && quantized.negativeZero)
+	value, _ := d.StringFixedChecked(scale)
+	return value
+}
+
+func (d Decimal) StringFixedChecked(scale int) (string, error) {
+	quantized, err := d.QuantizeChecked(scale)
+	if err != nil {
+		return "", err
+	}
+	negative := quantized.coefficient.Sign() < 0 ||
+		(quantized.coefficient.Sign() == 0 && quantized.negativeZero)
 	absolute := new(big.Int).Abs(quantized.coefficient)
 	digits := absolute.String()
 	if scale == 0 {
 		if negative {
-			return "-" + digits
+			return "-" + digits, nil
 		}
-		return digits
+		return digits, nil
 	}
 	if len(digits) <= scale {
 		digits = strings.Repeat("0", scale+1-len(digits)) + digits
 	}
 	result := digits[:len(digits)-scale] + "." + digits[len(digits)-scale:]
 	if negative {
-		return "-" + result
+		return "-" + result, nil
 	}
-	return result
+	return result, nil
 }
 
 func (d Decimal) String() string {
 	return d.StringFixed(d.scale)
+}
+
+func checkPrecision(value Decimal) (Decimal, error) {
+	if len(new(big.Int).Abs(value.coefficient).String()) > pythonDecimalPrecision {
+		return Decimal{}, ErrPrecision
+	}
+	return value, nil
 }
 
 func validDigitSeparators(value string) bool {
@@ -231,7 +299,7 @@ func tenTo(scale int) *big.Int {
 	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(scale)), nil)
 }
 
-func roundRatio(numerator, denominator *big.Int, scale int) Decimal {
+func roundRatio(numerator, denominator *big.Int, scale int, residual bool) (Decimal, error) {
 	if denominator.Sign() == 0 {
 		panic("division by zero")
 	}
@@ -241,11 +309,16 @@ func roundRatio(numerator, denominator *big.Int, scale int) Decimal {
 	quotient, remainder := new(big.Int).QuoRem(absoluteNumerator, absoluteDenominator, new(big.Int))
 	twiceRemainder := new(big.Int).Lsh(remainder, 1)
 	if twiceRemainder.Cmp(absoluteDenominator) > 0 ||
-		(twiceRemainder.Cmp(absoluteDenominator) == 0 && quotient.Bit(0) == 1) {
+		(twiceRemainder.Cmp(absoluteDenominator) == 0 &&
+			(residual || quotient.Bit(0) == 1)) {
 		quotient.Add(quotient, big.NewInt(1))
 	}
 	if negative {
 		quotient.Neg(quotient)
 	}
-	return Decimal{coefficient: quotient, scale: scale, negativeZero: negative && quotient.Sign() == 0}
+	return checkPrecision(Decimal{
+		coefficient:  quotient,
+		scale:        scale,
+		negativeZero: negative && quotient.Sign() == 0,
+	})
 }
