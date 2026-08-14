@@ -18,6 +18,8 @@ type Server struct {
 	Store store.PositionStore
 }
 
+var errStoredPositionPrecision = errors.New("stored position exceeds decimal precision")
+
 func (s *Server) GetPosition(ctx context.Context, request *portfoliov1.GetPositionRequest) (*portfoliov1.Position, error) {
 	if request == nil || strings.TrimSpace(request.GetAccountId()) == "" || strings.TrimSpace(request.GetSymbol()) == "" {
 		return nil, status.Error(codes.InvalidArgument, "account_id and symbol are required")
@@ -52,6 +54,9 @@ func (s *Server) GetPosition(ctx context.Context, request *portfoliov1.GetPositi
 	}
 	pnlText, err := unrealizedPnl(lots, mark)
 	if err != nil {
+		if errors.Is(err, errStoredPositionPrecision) {
+			return nil, status.Error(codes.Internal, "invalid stored position")
+		}
 		return nil, status.Error(codes.InvalidArgument, "mark exceeds decimal precision")
 	}
 	return &portfoliov1.Position{
@@ -68,6 +73,9 @@ func unrealizedPnl(lots []domain.Lot, mark money.Mark) (string, error) {
 			return "-NaN", nil
 		}
 		return "NaN", nil
+	}
+	if _, err := domain.TotalCost(lots).Quantize(2); errors.Is(err, money.ErrPrecision) {
+		return "", errStoredPositionPrecision
 	}
 	value, err := domain.UnrealizedPnL(lots, mark.Value)
 	if err != nil {

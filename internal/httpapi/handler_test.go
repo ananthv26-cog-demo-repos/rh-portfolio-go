@@ -165,3 +165,80 @@ func TestRedirectPreservesEscapedPath(t *testing.T) {
 		t.Fatalf("Location = %q", got)
 	}
 }
+
+func TestPositionMethodMatrixMatchesDjango(t *testing.T) {
+	price, _ := money.Parse("19.990000")
+	handler := NewHandler(&store.MemoryStore{Positions: map[string][]domain.Lot{
+		"acct-p1\x00HOOD": {{Quantity: 10, Price: price}},
+	}})
+	const validBody = `{"symbol":"HOOD","quantity":10,"average_cost":"19.9900","unrealized_pnl":"-199.90"}`
+	const optionsBody = `{"name":"Position","description":"","renders":["application/json","text/html"],"parses":["application/json","application/x-www-form-urlencoded","multipart/form-data"]}`
+	methods := []struct {
+		method string
+		status int
+		body   string
+	}{
+		{http.MethodGet, http.StatusOK, validBody},
+		{http.MethodHead, http.StatusOK, ""},
+		{http.MethodPost, http.StatusMethodNotAllowed, `{"detail":"Method \"POST\" not allowed."}`},
+		{http.MethodPut, http.StatusMethodNotAllowed, `{"detail":"Method \"PUT\" not allowed."}`},
+		{http.MethodPatch, http.StatusMethodNotAllowed, `{"detail":"Method \"PATCH\" not allowed."}`},
+		{http.MethodDelete, http.StatusMethodNotAllowed, `{"detail":"Method \"DELETE\" not allowed."}`},
+		{http.MethodOptions, http.StatusOK, optionsBody},
+	}
+	for _, test := range methods {
+		t.Run(test.method, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, "/v1/portfolio/acct-p1/HOOD/", nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+			if response.Body.String() != test.body {
+				t.Fatalf("body = %q, want %q", response.Body.String(), test.body)
+			}
+			if got := response.Header().Get("Allow"); got != "GET, HEAD, OPTIONS" {
+				t.Fatalf("Allow = %q", got)
+			}
+			if test.method == http.MethodGet || test.method == http.MethodHead ||
+				test.method == http.MethodOptions || test.status == http.StatusMethodNotAllowed {
+				if got := response.Header().Get("Content-Type"); got != "application/json" {
+					t.Fatalf("Content-Type = %q", got)
+				}
+			}
+		})
+	}
+}
+
+func TestUnknownPositionMethodMatrixMatchesDjango(t *testing.T) {
+	handler := NewHandler(&store.MemoryStore{})
+	methods := []struct {
+		method string
+		status int
+		body   string
+	}{
+		{http.MethodGet, http.StatusNotFound, ""},
+		{http.MethodHead, http.StatusNotFound, ""},
+		{http.MethodPost, http.StatusMethodNotAllowed, `{"detail":"Method \"POST\" not allowed."}`},
+		{http.MethodPut, http.StatusMethodNotAllowed, `{"detail":"Method \"PUT\" not allowed."}`},
+		{http.MethodPatch, http.StatusMethodNotAllowed, `{"detail":"Method \"PATCH\" not allowed."}`},
+		{http.MethodDelete, http.StatusMethodNotAllowed, `{"detail":"Method \"DELETE\" not allowed."}`},
+		{http.MethodOptions, http.StatusOK, `{"name":"Position","description":"","renders":["application/json","text/html"],"parses":["application/json","application/x-www-form-urlencoded","multipart/form-data"]}`},
+	}
+	for _, test := range methods {
+		t.Run(test.method, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, "/v1/portfolio/acct-p1/NOPE/", nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+			if response.Body.String() != test.body {
+				t.Fatalf("body = %q, want %q", response.Body.String(), test.body)
+			}
+			if got := response.Header().Get("Allow"); got != "GET, HEAD, OPTIONS" {
+				t.Fatalf("Allow = %q", got)
+			}
+		})
+	}
+}

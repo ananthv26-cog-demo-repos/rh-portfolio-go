@@ -64,6 +64,27 @@ func TestStoredPrecisionOverflowIsInternal(t *testing.T) {
 	if status.Code(err) != codes.Internal {
 		t.Fatalf("stored precision code = %s", status.Code(err))
 	}
+	if status.Convert(err).Message() != "invalid stored position" {
+		t.Fatalf("stored precision message = %q", status.Convert(err).Message())
+	}
+}
+
+func TestMarkPrecisionOverflowIsInvalidArgument(t *testing.T) {
+	price, _ := money.Parse("19.990000")
+	server := &Server{Store: &store.MemoryStore{Positions: map[string][]domain.Lot{
+		"acct\x00HOOD": {{Quantity: 10, Price: price}},
+	}}}
+	_, err := server.GetPosition(context.Background(), &portfoliov1.GetPositionRequest{
+		AccountId: "acct",
+		Symbol:    "HOOD",
+		Mark:      "1e26",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("mark precision code = %s", status.Code(err))
+	}
+	if status.Convert(err).Message() != "mark exceeds decimal precision" {
+		t.Fatalf("mark precision message = %q", status.Convert(err).Message())
+	}
 }
 
 func TestGetPositionStatusMappings(t *testing.T) {

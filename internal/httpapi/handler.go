@@ -31,8 +31,18 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 			return
 		}
 		accountID, symbol, ok := parsePath(request.URL.Path)
-		if !ok || request.Method != http.MethodGet {
+		if !ok {
 			http.NotFound(writer, request)
+			return
+		}
+		writer.Header().Set("Allow", "GET, HEAD, OPTIONS")
+		switch request.Method {
+		case http.MethodGet, http.MethodHead:
+		case http.MethodOptions:
+			writeOptions(writer)
+			return
+		default:
+			writeMethodNotAllowed(writer, request.Method)
 			return
 		}
 		symbol = strings.ToUpper(symbol)
@@ -96,8 +106,25 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 			return
 		}
 		writer.Header().Set("Content-Type", "application/json")
+		if request.Method == http.MethodHead {
+			writer.WriteHeader(http.StatusOK)
+			return
+		}
 		_, _ = writer.Write(body)
 	}
+}
+
+func writeOptions(writer http.ResponseWriter) {
+	writer.Header().Set("Allow", "GET, HEAD, OPTIONS")
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write([]byte(`{"name":"Position","description":"","renders":["application/json","text/html"],"parses":["application/json","application/x-www-form-urlencoded","multipart/form-data"]}`))
+}
+
+func writeMethodNotAllowed(writer http.ResponseWriter, method string) {
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusMethodNotAllowed)
+	_, _ = writer.Write([]byte("{\"detail\":\"Method \\\"" + method + "\\\" not allowed.\"}"))
 }
 
 func lastMarkValue(rawQuery string) (string, bool) {
