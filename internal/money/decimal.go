@@ -474,9 +474,9 @@ func divideToPrecision(value Decimal, divisor int64) Decimal {
 	}
 	targetScale := pythonDecimalPrecision - adjustedExponent - 1
 	if targetScale > maxRetainedScale {
-		// AverageCost is the only caller: its positive DB-backed quantity and
-		// six-decimal prices bound a nonzero quotient above this precision
-		// ceiling. Preserve signed zero because P23/P24 observe its sign.
+		// AverageCost's nonzero six-decimal total cost and bigint quantity keep
+		// this branch unreachable from either transport; sign propagation is
+		// defensive rather than fixture-pinned.
 		negative := value.coefficient.Sign() < 0
 		if divisor < 0 {
 			negative = !negative
