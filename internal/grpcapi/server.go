@@ -2,6 +2,7 @@ package grpcapi
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	portfoliov1 "github.com/ananthv26-cog-demo-repos/rh-portfolio-go/gen/portfolio/v1"
@@ -21,8 +22,9 @@ func (s *Server) GetPosition(ctx context.Context, request *portfoliov1.GetPositi
 	if request == nil || strings.TrimSpace(request.GetAccountId()) == "" || strings.TrimSpace(request.GetSymbol()) == "" {
 		return nil, status.Error(codes.InvalidArgument, "account_id and symbol are required")
 	}
-	symbol := strings.ToUpper(request.GetSymbol())
-	lots, err := s.Store.Lots(ctx, request.GetAccountId(), symbol)
+	accountID := strings.TrimSpace(request.GetAccountId())
+	symbol := strings.ToUpper(strings.TrimSpace(request.GetSymbol()))
+	lots, err := s.Store.Lots(ctx, accountID, symbol)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "store error")
 	}
@@ -39,11 +41,14 @@ func (s *Server) GetPosition(ctx context.Context, request *portfoliov1.GetPositi
 	}
 	averageCost, err := domain.AverageCost(lots)
 	if err != nil {
+		if errors.Is(err, money.ErrPrecision) {
+			return nil, status.Error(codes.Internal, "invalid stored position")
+		}
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	averageCostText, err := averageCost.StringFixed(4)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid position")
+		return nil, status.Error(codes.Internal, "invalid stored position")
 	}
 	pnlText, err := unrealizedPnl(lots, mark)
 	if err != nil {

@@ -17,10 +17,10 @@ const (
 
 // Decimal stores an exact decimal as an integer coefficient and a decimal scale.
 type Decimal struct {
-	coefficient  *big.Int
-	scale        int
-	negativeZero bool
-	inexact      bool
+	coefficient       *big.Int
+	scale             int
+	negativeZero      bool
+	residualDirection int8
 }
 
 type Mark struct {
@@ -77,6 +77,9 @@ func Parse(text string) (Decimal, error) {
 	if strings.Count(text, ".") > 1 {
 		return Decimal{}, ErrInvalidDecimal
 	}
+	if !strings.ContainsAny(strings.ReplaceAll(text, "_", ""), "0123456789") {
+		return Decimal{}, ErrInvalidDecimal
+	}
 	parts := strings.SplitN(text, ".", 2)
 	whole, fraction := parts[0], ""
 	if len(parts) == 2 {
@@ -112,28 +115,37 @@ func Parse(text string) (Decimal, error) {
 		coefficient.Mul(coefficient, tenTo(-scale))
 		scale = 0
 	}
-	inexact := false
 	if scale > maxRetainedScale {
 		drop := scale - maxRetainedScale
 		nonzero := coefficient.Sign() != 0
+		direction := int8(0)
+		if nonzero {
+			direction = residualSign(coefficient, negative)
+		}
 		digitLength := len(new(big.Int).Abs(coefficient).String())
 		if drop >= digitLength {
 			coefficient.SetInt64(0)
-			inexact = nonzero
 		} else {
 			divisor := tenTo(drop)
 			quotient, remainder := new(big.Int).QuoRem(coefficient, divisor, new(big.Int))
 			coefficient = quotient
-			inexact = remainder.Sign() != 0
+			if remainder.Sign() == 0 {
+				direction = 0
+			}
 		}
 		scale = maxRetainedScale
 		return Decimal{
-			coefficient: coefficient,
-			scale:       scale,
-			inexact:     inexact,
+			coefficient:       coefficient,
+			scale:             scale,
+			negativeZero:      negative && coefficient.Sign() == 0,
+			residualDirection: direction,
 		}, nil
 	}
-	return Decimal{coefficient: coefficient, scale: scale}, nil
+	return Decimal{
+		coefficient:  coefficient,
+		scale:        scale,
+		negativeZero: negative && coefficient.Sign() == 0,
+	}, nil
 }
 
 func stringWithSign(sign byte, value string) string {
@@ -151,7 +163,12 @@ func (d Decimal) Add(other Decimal) Decimal {
 	left := scaledCoefficient(d, scale)
 	right := scaledCoefficient(other, scale)
 	left.Add(left, right)
-	return Decimal{coefficient: left, scale: scale, inexact: d.inexact || other.inexact}
+	return Decimal{
+		coefficient:       left,
+		scale:             scale,
+		negativeZero:      left.Sign() == 0 && d.negativeZero && other.coefficient.Sign() == 0,
+		residualDirection: combineResidual(d.residualDirection, other.residualDirection),
+	}
 }
 
 func (d Decimal) Sub(other Decimal) Decimal {
@@ -162,15 +179,21 @@ func (d Decimal) Sub(other Decimal) Decimal {
 	left := scaledCoefficient(d, scale)
 	right := scaledCoefficient(other, scale)
 	left.Sub(left, right)
-	return Decimal{coefficient: left, scale: scale, inexact: d.inexact || other.inexact}
+	return Decimal{
+		coefficient:       left,
+		scale:             scale,
+		negativeZero:      left.Sign() == 0 && d.negativeZero && other.coefficient.Sign() == 0 && !other.negativeZero,
+		residualDirection: combineResidual(d.residualDirection, -other.residualDirection),
+	}
 }
 
 func (d Decimal) MulInt64(value int64) Decimal {
 	coefficient := new(big.Int).Mul(d.coefficient, big.NewInt(value))
 	return Decimal{
-		coefficient: coefficient,
-		scale:       d.scale,
-		inexact:     d.inexact,
+		coefficient:       coefficient,
+		scale:             d.scale,
+		negativeZero:      d.negativeZero && value > 0 || !d.negativeZero && d.coefficient.Sign() == 0 && value < 0,
+		residualDirection: multiplyResidual(d.residualDirection, value),
 	}
 }
 
@@ -179,14 +202,14 @@ func (d Decimal) Quantize(scale int) (Decimal, error) {
 	if scale >= d.scale {
 		coefficient := new(big.Int).Mul(d.coefficient, tenTo(scale-d.scale))
 		value = Decimal{
-			coefficient:  coefficient,
-			scale:        scale,
-			negativeZero: d.negativeZero,
-			inexact:      d.inexact,
+			coefficient:       coefficient,
+			scale:             scale,
+			negativeZero:      d.negativeZero,
+			residualDirection: d.residualDirection,
 		}
 		return checkPrecision(value)
 	}
-	return roundRatio(d.coefficient, tenTo(d.scale-scale), scale, d.inexact)
+	return roundRatio(d.coefficient, tenTo(d.scale-scale), scale, d.residualDirection, d.negativeZero)
 }
 
 // DivideQuantized divides d by divisor and reports context precision errors.
@@ -200,7 +223,7 @@ func (d Decimal) DivideQuantized(divisor int64, scale int) (Decimal, error) {
 		numerator.Neg(numerator)
 		denominator.Neg(denominator)
 	}
-	return roundRatio(numerator, denominator, scale, d.inexact)
+	return roundRatio(numerator, denominator, scale, d.residualDirection, d.negativeZero)
 }
 
 func (d Decimal) StringFixed(scale int) (string, error) {
@@ -291,7 +314,7 @@ func tenTo(scale int) *big.Int {
 	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(scale)), nil)
 }
 
-func roundRatio(numerator, denominator *big.Int, scale int, residual bool) (Decimal, error) {
+func roundRatio(numerator, denominator *big.Int, scale int, residualDirection int8, negativeZero bool) (Decimal, error) {
 	if denominator.Sign() == 0 {
 		panic("division by zero")
 	}
@@ -302,7 +325,8 @@ func roundRatio(numerator, denominator *big.Int, scale int, residual bool) (Deci
 	twiceRemainder := new(big.Int).Lsh(remainder, 1)
 	if twiceRemainder.Cmp(absoluteDenominator) > 0 ||
 		(twiceRemainder.Cmp(absoluteDenominator) == 0 &&
-			(residual || quotient.Bit(0) == 1)) {
+			((residualDirection != 0 && residualDirection == signOf(negative)) ||
+				quotient.Bit(0) == 1)) {
 		quotient.Add(quotient, big.NewInt(1))
 	}
 	if negative {
@@ -311,6 +335,49 @@ func roundRatio(numerator, denominator *big.Int, scale int, residual bool) (Deci
 	return checkPrecision(Decimal{
 		coefficient:  quotient,
 		scale:        scale,
-		negativeZero: negative && quotient.Sign() == 0,
+		negativeZero: (negative && quotient.Sign() == 0) || (quotient.Sign() == 0 && negativeZero),
 	})
+}
+
+func residualSign(coefficient *big.Int, negative bool) int8 {
+	if coefficient.Sign() == 0 {
+		if negative {
+			return -1
+		}
+		return 1
+	}
+	if coefficient.Sign() < 0 {
+		return -1
+	}
+	return 1
+}
+
+func signOf(negative bool) int8 {
+	if negative {
+		return -1
+	}
+	return 1
+}
+
+func multiplyResidual(direction int8, value int64) int8 {
+	if direction == 0 || value == 0 {
+		return 0
+	}
+	if value < 0 {
+		return -direction
+	}
+	return direction
+}
+
+func combineResidual(left, right int8) int8 {
+	if left == 0 {
+		return right
+	}
+	if right == 0 || left == right {
+		return left
+	}
+	// Opposing inexact operands are unreachable for portfolio arithmetic:
+	// stored lot prices have at most six fractional digits and only marks
+	// originate outside that bound.
+	return 0
 }

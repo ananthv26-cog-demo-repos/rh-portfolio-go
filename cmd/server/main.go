@@ -20,7 +20,10 @@ import (
 )
 
 func main() {
-	databaseURL := getenv("DATABASE_URL", "postgres://rh:rh@localhost:5432/rh_trading?sslmode=disable")
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		log.Fatal("DATABASE_URL is required")
+	}
 	pool, err := pgxpool.New(context.Background(), databaseURL)
 	if err != nil {
 		log.Fatal(err)

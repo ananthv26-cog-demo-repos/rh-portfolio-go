@@ -4,7 +4,7 @@ Go portfolio read service migrated from the `rh-trading` Django estate.
 
 ## Run
 
-The service reads `portfolio_lot` from PostgreSQL:
+The service requires `DATABASE_URL` to read `portfolio_lot` from PostgreSQL:
 
 ```sh
 export DATABASE_URL='postgres://rh:rh@localhost:5432/rh_trading?sslmode=disable'
@@ -34,6 +34,6 @@ Dockerfile and paved-road deployment manifest with:
 make render
 ```
 
-The render script accepts `PAVED_ROAD_ROOT`, `SERVICE_NAME`, and `PORT`
+The render script accepts `PAVED_ROAD_ROOT`, `SERVICE_NAME`, and `RENDER_PORT`
 overrides. The generated deployment keeps `{{VERSION}}` for CI image
 substitution.

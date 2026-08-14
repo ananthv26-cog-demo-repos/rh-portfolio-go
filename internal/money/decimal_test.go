@@ -18,6 +18,8 @@ func TestFixtureValues(t *testing.T) {
 		{"p7 signed zero", "-0.0002", "-0.00", 2},
 		{"p9 pnl", "100000", "100000.00", 2},
 		{"p11 negative mark", "-214.90", "-214.90", 2},
+		{"parsed negative zero", "-0", "-0.00", 2},
+		{"parsed positive zero", "0", "0.00", 2},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -107,6 +109,19 @@ func TestParseMarkRejectsNonFiniteValues(t *testing.T) {
 	}
 }
 
+func TestParseRejectsExponentWithoutMantissa(t *testing.T) {
+	for _, input := range []string{"e5", "-e5", "+e-3"} {
+		t.Run(input, func(t *testing.T) {
+			if _, err := ParseMark(input); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+	if _, err := ParseMark(".e3"); err == nil {
+		t.Fatal("expected an error")
+	}
+}
+
 func TestNegativeZeroOnlyComesFromRounding(t *testing.T) {
 	value, _ := Parse("-0.0002")
 	got, err := value.StringFixed(2)
@@ -123,6 +138,24 @@ func TestNegativeZeroOnlyComesFromRounding(t *testing.T) {
 	}
 	if got != "0.00" {
 		t.Fatalf("exact zero = %q", got)
+	}
+}
+
+func TestNarrowingQuantizePreservesSignedZero(t *testing.T) {
+	value, err := Parse("-0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := value.Quantize(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := got.StringFixed(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if formatted != "-0.00" {
+		t.Fatalf("narrowed signed zero = %q", formatted)
 	}
 }
 
@@ -148,5 +181,23 @@ func TestResidualBeyondRetainedScaleBreaksHalfEvenTieAwayFromZero(t *testing.T) 
 	}
 	if got != "1.2347" {
 		t.Fatalf("residual tie = %q, want 1.2347", got)
+	}
+}
+
+func TestResidualDirectionOpposingNegativeValueRoundsTowardZero(t *testing.T) {
+	mark, err := Parse("0.005" + strings.Repeat("0", 80) + "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cost, err := Parse("0.01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := mark.Sub(cost).StringFixed(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "-0.00" {
+		t.Fatalf("opposing residual direction = %q", got)
 	}
 }
