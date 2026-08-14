@@ -41,11 +41,11 @@ func (s *Server) GetPosition(ctx context.Context, request *portfoliov1.GetPositi
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	averageCostText, err := averageCost.StringFixedChecked(4)
+	averageCostText, err := averageCost.StringFixed(4)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid position")
 	}
-	pnlText, err := unrealizedPnlChecked(lots, mark)
+	pnlText, err := unrealizedPnl(lots, mark)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "mark exceeds decimal precision")
 	}
@@ -57,26 +57,16 @@ func (s *Server) GetPosition(ctx context.Context, request *portfoliov1.GetPositi
 	}, nil
 }
 
-func unrealizedPnl(lots []domain.Lot, mark money.Mark) string {
-	if mark.NaN {
-		if mark.NegativeNaN {
-			return "-NaN"
-		}
-		return "NaN"
-	}
-	return domain.UnrealizedPnL(lots, mark.Value).StringFixed(2)
-}
-
-func unrealizedPnlChecked(lots []domain.Lot, mark money.Mark) (string, error) {
+func unrealizedPnl(lots []domain.Lot, mark money.Mark) (string, error) {
 	if mark.NaN {
 		if mark.NegativeNaN {
 			return "-NaN", nil
 		}
 		return "NaN", nil
 	}
-	value, err := domain.UnrealizedPnLChecked(lots, mark.Value)
+	value, err := domain.UnrealizedPnL(lots, mark.Value)
 	if err != nil {
 		return "", err
 	}
-	return value.StringFixedChecked(2)
+	return value.StringFixed(2)
 }

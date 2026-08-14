@@ -3,6 +3,7 @@ package money
 import (
 	"errors"
 	"math/big"
+	"strconv"
 	"strings"
 )
 
@@ -115,7 +116,8 @@ func Parse(text string) (Decimal, error) {
 	if scale > maxRetainedScale {
 		drop := scale - maxRetainedScale
 		nonzero := coefficient.Sign() != 0
-		if drop >= len(coefficient.String()) {
+		digitLength := len(new(big.Int).Abs(coefficient).String())
+		if drop >= digitLength {
 			coefficient.SetInt64(0)
 			inexact = nonzero
 		} else {
@@ -172,12 +174,7 @@ func (d Decimal) MulInt64(value int64) Decimal {
 	}
 }
 
-func (d Decimal) Quantize(scale int) Decimal {
-	value, _ := d.QuantizeChecked(scale)
-	return value
-}
-
-func (d Decimal) QuantizeChecked(scale int) (Decimal, error) {
+func (d Decimal) Quantize(scale int) (Decimal, error) {
 	var value Decimal
 	if scale >= d.scale {
 		coefficient := new(big.Int).Mul(d.coefficient, tenTo(scale-d.scale))
@@ -192,14 +189,8 @@ func (d Decimal) QuantizeChecked(scale int) (Decimal, error) {
 	return roundRatio(d.coefficient, tenTo(d.scale-scale), scale, d.inexact)
 }
 
-// DivideQuantized divides d by divisor and rounds the result to scale places.
-func (d Decimal) DivideQuantized(divisor int64, scale int) Decimal {
-	value, _ := d.DivideQuantizedChecked(divisor, scale)
-	return value
-}
-
-// DivideQuantizedChecked divides d by divisor and reports context precision errors.
-func (d Decimal) DivideQuantizedChecked(divisor int64, scale int) (Decimal, error) {
+// DivideQuantized divides d by divisor and reports context precision errors.
+func (d Decimal) DivideQuantized(divisor int64, scale int) (Decimal, error) {
 	if divisor == 0 {
 		panic("division by zero")
 	}
@@ -212,13 +203,8 @@ func (d Decimal) DivideQuantizedChecked(divisor int64, scale int) (Decimal, erro
 	return roundRatio(numerator, denominator, scale, d.inexact)
 }
 
-func (d Decimal) StringFixed(scale int) string {
-	value, _ := d.StringFixedChecked(scale)
-	return value
-}
-
-func (d Decimal) StringFixedChecked(scale int) (string, error) {
-	quantized, err := d.QuantizeChecked(scale)
+func (d Decimal) StringFixed(scale int) (string, error) {
+	quantized, err := d.Quantize(scale)
 	if err != nil {
 		return "", err
 	}
@@ -243,7 +229,13 @@ func (d Decimal) StringFixedChecked(scale int) (string, error) {
 }
 
 func (d Decimal) String() string {
-	return d.StringFixed(d.scale)
+	value, err := d.StringFixed(d.scale)
+	if err == nil {
+		return value
+	}
+	// String is for debugging; preserve the exact coefficient and scale if
+	// formatting would exceed the Python-compatible precision ceiling.
+	return d.coefficient.String() + "e-" + strconv.Itoa(d.scale)
 }
 
 func checkPrecision(value Decimal) (Decimal, error) {

@@ -34,15 +34,10 @@ func AverageCost(lots []Lot) (money.Decimal, error) {
 	if quantity <= 0 {
 		return money.Decimal{}, ErrNoOpenPosition
 	}
-	return TotalCost(lots).DivideQuantizedChecked(quantity, 4)
+	return TotalCost(lots).DivideQuantized(quantity, 4)
 }
 
-func UnrealizedPnL(lots []Lot, mark money.Decimal) money.Decimal {
-	value, _ := UnrealizedPnLChecked(lots, mark)
-	return value
-}
-
-func UnrealizedPnLChecked(lots []Lot, mark money.Decimal) (money.Decimal, error) {
+func UnrealizedPnL(lots []Lot, mark money.Decimal) (money.Decimal, error) {
 	quantity := NetQuantity(lots)
-	return mark.MulInt64(quantity).Sub(TotalCost(lots)).QuantizeChecked(2)
+	return mark.MulInt64(quantity).Sub(TotalCost(lots)).Quantize(2)
 }

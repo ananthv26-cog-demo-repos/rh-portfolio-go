@@ -61,12 +61,16 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 		}
 		pnl := "NaN"
 		if !mark.NaN {
-			pnlValue, err := domain.UnrealizedPnLChecked(lots, mark.Value)
+			pnlValue, err := domain.UnrealizedPnL(lots, mark.Value)
 			if err != nil {
 				writeError(writer, http.StatusInternalServerError, "invalid mark")
 				return
 			}
-			pnl = pnlValue.StringFixed(2)
+			pnl, err = pnlValue.StringFixed(2)
+			if err != nil {
+				writeError(writer, http.StatusInternalServerError, "invalid mark")
+				return
+			}
 		} else if mark.NegativeNaN {
 			pnl = "-NaN"
 		}
@@ -78,8 +82,13 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 		}{
 			Symbol:        symbol,
 			Quantity:      domain.NetQuantity(lots),
-			AverageCost:   averageCost.StringFixed(4),
+			AverageCost:   "",
 			UnrealizedPnl: pnl,
+		}
+		response.AverageCost, err = averageCost.StringFixed(4)
+		if err != nil {
+			writeError(writer, http.StatusInternalServerError, "invalid position")
+			return
 		}
 		body, err := json.Marshal(response)
 		if err != nil {

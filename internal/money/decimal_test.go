@@ -1,6 +1,9 @@
 package money
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFixtureValues(t *testing.T) {
 	tests := []struct {
@@ -22,7 +25,11 @@ func TestFixtureValues(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := value.StringFixed(test.scale); got != test.want {
+			got, err := value.StringFixed(test.scale)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
 				t.Fatalf("StringFixed(%d) = %q, want %q", test.scale, got, test.want)
 			}
 		})
@@ -31,11 +38,27 @@ func TestFixtureValues(t *testing.T) {
 
 func TestDivideQuantizedHalfEven(t *testing.T) {
 	value, _ := Parse("2.469300")
-	if got := value.DivideQuantized(2, 4).StringFixed(4); got != "1.2346" {
+	quantized, err := value.DivideQuantized(2, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := quantized.StringFixed(4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "1.2346" {
 		t.Fatalf("got %s", got)
 	}
 	value, _ = Parse("11")
-	if got := value.DivideQuantized(7, 4).StringFixed(4); got != "1.5714" {
+	quantized, err = value.DivideQuantized(7, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = quantized.StringFixed(4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "1.5714" {
 		t.Fatalf("got %s", got)
 	}
 }
@@ -86,21 +109,44 @@ func TestParseMarkRejectsNonFiniteValues(t *testing.T) {
 
 func TestNegativeZeroOnlyComesFromRounding(t *testing.T) {
 	value, _ := Parse("-0.0002")
-	if got := value.StringFixed(2); got != "-0.00" {
+	got, err := value.StringFixed(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "-0.00" {
 		t.Fatalf("rounded negative zero = %q", got)
 	}
 	zero, _ := Parse("0")
-	if got := zero.Sub(zero).StringFixed(2); got != "0.00" {
+	got, err = zero.Sub(zero).StringFixed(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "0.00" {
 		t.Fatalf("exact zero = %q", got)
 	}
 }
 
 func TestResidualBeyondRetainedScaleBreaksHalfEvenTieAwayFromZero(t *testing.T) {
-	value, err := Parse("1.2346500000000000000000000001")
+	plain, err := Parse("1.23465")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := value.StringFixed(4); got != "1.2347" {
+	got, err := plain.StringFixed(4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "1.2346" {
+		t.Fatalf("plain tie = %q, want 1.2346", got)
+	}
+	residual, err := Parse("1.23465" + strings.Repeat("0", 80) + "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = residual.StringFixed(4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "1.2347" {
 		t.Fatalf("residual tie = %q, want 1.2347", got)
 	}
 }
