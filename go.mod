@@ -1,6 +1,6 @@
 module github.com/ananthv26-cog-demo-repos/rh-portfolio-go
 
-go 1.22.12
+go 1.22
 
 require (
 	github.com/golang/protobuf v1.5.0
