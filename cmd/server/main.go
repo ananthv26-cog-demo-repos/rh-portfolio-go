@@ -34,7 +34,14 @@ func main() {
 	}
 
 	positionStore := &store.PostgresStore{Pool: pool}
-	httpServer := &http.Server{Addr: ":" + getenv("PORT", "8081"), Handler: httpapi.NewHandler(positionStore)}
+	httpServer := &http.Server{
+		Addr:              ":" + getenv("PORT", "8081"),
+		Handler:           httpapi.NewHandler(positionStore),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 	grpcListener, err := net.Listen("tcp", ":"+getenv("GRPC_PORT", "9090"))
 	if err != nil {
 		log.Fatal(err)

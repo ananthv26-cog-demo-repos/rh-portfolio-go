@@ -22,7 +22,7 @@ func NewHandler(positionStore store.PositionStore) http.Handler {
 
 func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		if redirectPath, ok := redirectPath(request.URL.Path); ok {
+		if redirectPath, ok := redirectPath(request.URL.EscapedPath()); ok {
 			if request.URL.RawQuery != "" {
 				redirectPath += "?" + request.URL.RawQuery
 			}
@@ -47,7 +47,7 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 		}
 		rawMark := "0"
 		if values, present := request.URL.Query()["mark"]; present {
-			rawMark = values[0]
+			rawMark = values[len(values)-1]
 		}
 		mark, err := money.ParseMark(rawMark)
 		if err != nil {

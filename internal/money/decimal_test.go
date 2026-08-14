@@ -122,6 +122,33 @@ func TestParseRejectsExponentWithoutMantissa(t *testing.T) {
 	}
 }
 
+func TestParseExponentMatchesCPythonLimits(t *testing.T) {
+	tests := []struct {
+		input string
+		ok    bool
+	}{
+		{"1e-1999999999999999997", true},
+		{"1.0e-1999999999999999996", true},
+		{"1.23e-1999999999999999995", true},
+		{"0.001e-1999999999999999994", true},
+		{"1e-1999999999999999998", false},
+		{"1e999999999999999999", true},
+		{"12e999999999999999998", true},
+		{"123e999999999999999997", true},
+		{"1e1000000000000000000", false},
+		{"1e-9223372036854775807", false},
+		{"1.0e-9223372036854775807", false},
+	}
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			_, err := ParseMark(test.input)
+			if (err == nil) != test.ok {
+				t.Fatalf("error = %v, want accepted=%v", err, test.ok)
+			}
+		})
+	}
+}
+
 func TestNegativeZeroOnlyComesFromRounding(t *testing.T) {
 	value, _ := Parse("-0.0002")
 	got, err := value.StringFixed(2)

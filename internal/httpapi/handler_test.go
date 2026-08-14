@@ -86,3 +86,48 @@ func TestMarkPresenceDistinguishesAbsentAndEmpty(t *testing.T) {
 		})
 	}
 }
+
+func TestRepeatedMarkUsesLastValue(t *testing.T) {
+	price, _ := money.Parse("19.990000")
+	handler := NewHandler(&store.MemoryStore{Positions: map[string][]domain.Lot{
+		"acct-p1\x00HOOD": {{Quantity: 10, Price: price}},
+	}})
+	tests := []struct {
+		name   string
+		query  string
+		status int
+		body   string
+	}{
+		{"last invalid", "?mark=0&mark=abc", http.StatusInternalServerError, ""},
+		{"last valid", "?mark=abc&mark=20.00", http.StatusOK, `"unrealized_pnl":"0.10"`},
+		{"last empty", "?mark=20.00&mark=", http.StatusInternalServerError, ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet,
+				"/v1/portfolio/acct-p1/HOOD/"+test.query, nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+			if test.body != "" && !strings.Contains(response.Body.String(), test.body) {
+				t.Fatalf("body = %q, want substring %q", response.Body.String(), test.body)
+			}
+		})
+	}
+}
+
+func TestRedirectPreservesEscapedPath(t *testing.T) {
+	handler := NewHandler(&store.MemoryStore{})
+	request := httptest.NewRequest(http.MethodGet,
+		"/v1/portfolio/acct%20x/HOOD?mark=1", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusMovedPermanently {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusMovedPermanently)
+	}
+	if got := response.Header().Get("Location"); got != "/v1/portfolio/acct%20x/HOOD/?mark=1" {
+		t.Fatalf("Location = %q", got)
+	}
+}

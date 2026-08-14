@@ -13,6 +13,8 @@ var ErrPrecision = errors.New("decimal exceeds CPython context.prec=28")
 const (
 	pythonDecimalPrecision = 28
 	maxRetainedScale       = 80
+	mpdMinEtiny            = "-1999999999999999997"
+	mpdMaxEmax             = "999999999999999999"
 )
 
 // Decimal stores an exact decimal as an integer coefficient and a decimal scale.
@@ -21,6 +23,7 @@ type Decimal struct {
 	scale             int
 	negativeZero      bool
 	residualDirection int8
+	precisionOverflow bool
 }
 
 type Mark struct {
@@ -62,7 +65,7 @@ func Parse(text string) (Decimal, error) {
 	if text == "" {
 		return Decimal{}, ErrInvalidDecimal
 	}
-	exponent := 0
+	exponent := big.NewInt(0)
 	if index := strings.IndexAny(text, "eE"); index >= 0 {
 		if strings.IndexAny(text[index+1:], "eE") >= 0 {
 			return Decimal{}, ErrInvalidDecimal
@@ -107,13 +110,35 @@ func Parse(text string) (Decimal, error) {
 	if negative {
 		coefficient.Neg(coefficient)
 	}
-	scale := len(fraction) - exponent
-	if scale < 0 {
-		if scale < -60 {
-			return Decimal{}, ErrInvalidDecimal
+	trueExponent := new(big.Int).Neg(big.NewInt(int64(len(fraction))))
+	trueExponent.Add(trueExponent, exponent)
+	adjustedExponent := new(big.Int).Add(trueExponent, big.NewInt(int64(len(digits)-1)))
+	minEtiny, _ := new(big.Int).SetString(mpdMinEtiny, 10)
+	maxEmax, _ := new(big.Int).SetString(mpdMaxEmax, 10)
+	if trueExponent.Cmp(minEtiny) < 0 || adjustedExponent.Cmp(maxEmax) > 0 {
+		return Decimal{}, ErrInvalidDecimal
+	}
+	scale := 0
+	if trueExponent.Sign() > 0 {
+		if trueExponent.Cmp(big.NewInt(60)) <= 0 {
+			scale = int(trueExponent.Int64())
+			coefficient.Mul(coefficient, tenTo(scale))
+			scale = 0
+		} else {
+			return Decimal{
+				coefficient:       coefficient,
+				negativeZero:      negative && coefficient.Sign() == 0,
+				precisionOverflow: coefficient.Sign() != 0,
+			}, nil
 		}
-		coefficient.Mul(coefficient, tenTo(-scale))
-		scale = 0
+	} else {
+		scaleBig := new(big.Int).Neg(trueExponent)
+		if scaleBig.IsInt64() &&
+			scaleBig.Int64() <= int64(maxRetainedScale+len(digits)) {
+			scale = int(scaleBig.Int64())
+		} else {
+			scale = maxRetainedScale + len(digits)
+		}
 	}
 	if scale > maxRetainedScale {
 		drop := scale - maxRetainedScale
@@ -156,6 +181,9 @@ func stringWithSign(sign byte, value string) string {
 }
 
 func (d Decimal) Add(other Decimal) Decimal {
+	if d.precisionOverflow || other.precisionOverflow {
+		return Decimal{coefficient: big.NewInt(0), precisionOverflow: true}
+	}
 	scale := d.scale
 	if other.scale > scale {
 		scale = other.scale
@@ -168,10 +196,14 @@ func (d Decimal) Add(other Decimal) Decimal {
 		scale:             scale,
 		negativeZero:      left.Sign() == 0 && d.negativeZero && other.coefficient.Sign() == 0,
 		residualDirection: combineResidual(d.residualDirection, other.residualDirection),
+		precisionOverflow: d.precisionOverflow || other.precisionOverflow,
 	}
 }
 
 func (d Decimal) Sub(other Decimal) Decimal {
+	if d.precisionOverflow || other.precisionOverflow {
+		return Decimal{coefficient: big.NewInt(0), precisionOverflow: true}
+	}
 	scale := d.scale
 	if other.scale > scale {
 		scale = other.scale
@@ -184,6 +216,7 @@ func (d Decimal) Sub(other Decimal) Decimal {
 		scale:             scale,
 		negativeZero:      left.Sign() == 0 && d.negativeZero && other.coefficient.Sign() == 0 && !other.negativeZero,
 		residualDirection: combineResidual(d.residualDirection, -other.residualDirection),
+		precisionOverflow: d.precisionOverflow || other.precisionOverflow,
 	}
 }
 
@@ -194,10 +227,14 @@ func (d Decimal) MulInt64(value int64) Decimal {
 		scale:             d.scale,
 		negativeZero:      d.negativeZero && value > 0 || !d.negativeZero && d.coefficient.Sign() == 0 && value < 0,
 		residualDirection: multiplyResidual(d.residualDirection, value),
+		precisionOverflow: d.precisionOverflow && value != 0,
 	}
 }
 
 func (d Decimal) Quantize(scale int) (Decimal, error) {
+	if d.precisionOverflow {
+		return Decimal{}, ErrPrecision
+	}
 	var value Decimal
 	if scale >= d.scale {
 		coefficient := new(big.Int).Mul(d.coefficient, tenTo(scale-d.scale))
@@ -206,6 +243,7 @@ func (d Decimal) Quantize(scale int) (Decimal, error) {
 			scale:             scale,
 			negativeZero:      d.negativeZero,
 			residualDirection: d.residualDirection,
+			precisionOverflow: d.precisionOverflow,
 		}
 		return checkPrecision(value)
 	}
@@ -216,6 +254,9 @@ func (d Decimal) Quantize(scale int) (Decimal, error) {
 func (d Decimal) DivideQuantized(divisor int64, scale int) (Decimal, error) {
 	if divisor == 0 {
 		panic("division by zero")
+	}
+	if d.precisionOverflow {
+		return Decimal{}, ErrPrecision
 	}
 	numerator := new(big.Int).Mul(d.coefficient, tenTo(scale))
 	denominator := new(big.Int).Mul(big.NewInt(divisor), tenTo(d.scale))
@@ -262,6 +303,9 @@ func (d Decimal) String() string {
 }
 
 func checkPrecision(value Decimal) (Decimal, error) {
+	if value.precisionOverflow {
+		return Decimal{}, ErrPrecision
+	}
 	if len(new(big.Int).Abs(value.coefficient).String()) > pythonDecimalPrecision {
 		return Decimal{}, ErrPrecision
 	}
@@ -284,9 +328,9 @@ func validDigitSeparators(value string) bool {
 	return true
 }
 
-func parseExponent(value string) (int, bool) {
+func parseExponent(value string) (*big.Int, bool) {
 	if value == "" {
-		return 0, false
+		return nil, false
 	}
 	sign := 1
 	if value[0] == '+' || value[0] == '-' {
@@ -296,14 +340,17 @@ func parseExponent(value string) (int, bool) {
 		value = value[1:]
 	}
 	if !validDigitSeparators(value) {
-		return 0, false
+		return nil, false
 	}
 	value = strings.ReplaceAll(value, "_", "")
 	exponent := new(big.Int)
-	if _, ok := exponent.SetString(value, 10); !ok || !exponent.IsInt64() {
-		return 0, false
+	if _, ok := exponent.SetString(value, 10); !ok {
+		return nil, false
 	}
-	return sign * int(exponent.Int64()), true
+	if sign < 0 {
+		exponent.Neg(exponent)
+	}
+	return exponent, true
 }
 
 func scaledCoefficient(value Decimal, scale int) *big.Int {
