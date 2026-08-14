@@ -384,3 +384,11 @@ func TestArithmeticRoundsResidualBeforeQuantize(t *testing.T) {
 		t.Fatalf("context-rounded tie = %q, want 0.00", got)
 	}
 }
+
+func TestCombineResidualOpposingDirectionsCancel(t *testing.T) {
+	// Arithmetic clears residuals after rounding, so two inexact operands
+	// are currently unreachable through the public money operations.
+	if got := combineResidual(1, -1); got != 0 {
+		t.Fatalf("opposing residuals = %d, want 0", got)
+	}
+}
