@@ -27,9 +27,7 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 				redirectPath += "?" + request.URL.RawQuery
 			}
 			writer.Header().Set("Location", redirectPath)
-			writer.Header().Set("X-Content-Type-Options", "nosniff")
-			writer.Header().Set("Referrer-Policy", "same-origin")
-			writer.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+			setCommonHeaders(writer)
 			writer.WriteHeader(http.StatusMovedPermanently)
 			return
 		}
@@ -135,7 +133,11 @@ func writeMethodNotAllowed(writer http.ResponseWriter, method string) {
 }
 
 func setRoutedHeaders(writer http.ResponseWriter) {
+	setCommonHeaders(writer)
 	writer.Header().Set("Vary", "Accept")
+}
+
+func setCommonHeaders(writer http.ResponseWriter) {
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
 	writer.Header().Set("Referrer-Policy", "same-origin")
 	writer.Header().Set("Cross-Origin-Opener-Policy", "same-origin")

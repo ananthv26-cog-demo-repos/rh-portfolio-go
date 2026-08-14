@@ -7,6 +7,7 @@ test:
 	go test ./...
 
 proto:
+	mkdir -p gen
 	protoc -I ../rh-proto/proto \
 		--go_out=paths=source_relative:gen \
 		--go-grpc_out=paths=source_relative:gen \

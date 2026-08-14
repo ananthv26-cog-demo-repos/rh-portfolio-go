@@ -81,17 +81,19 @@ func run() error {
 	case <-signals:
 	case serveErr = <-serveErrors:
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_ = httpServer.Shutdown(ctx)
+	httpCtx, cancelHTTP := context.WithTimeout(context.Background(), 10*time.Second)
+	_ = httpServer.Shutdown(httpCtx)
+	cancelHTTP()
 	grpcDone := make(chan struct{})
 	go func() {
 		grpcServer.GracefulStop()
 		close(grpcDone)
 	}()
+	grpcCtx, cancelGRPC := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelGRPC()
 	select {
 	case <-grpcDone:
-	case <-ctx.Done():
+	case <-grpcCtx.Done():
 		grpcServer.Stop()
 	}
 	return serveErr
