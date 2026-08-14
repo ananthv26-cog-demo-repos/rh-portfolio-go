@@ -228,3 +228,21 @@ func TestResidualDirectionOpposingNegativeValueRoundsTowardZero(t *testing.T) {
 		t.Fatalf("opposing residual direction = %q", got)
 	}
 }
+
+func TestResidualDirectionOpposingOddQuotientRoundsTowardZero(t *testing.T) {
+	mark, err := Parse("0.005" + strings.Repeat("0", 80) + "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cost, err := Parse("0.02")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := mark.Sub(cost).StringFixed(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "-0.01" {
+		t.Fatalf("odd opposing residual = %q, want -0.01", got)
+	}
+}

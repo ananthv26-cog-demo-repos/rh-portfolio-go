@@ -370,10 +370,18 @@ func roundRatio(numerator, denominator *big.Int, scale int, residualDirection in
 	absoluteDenominator := new(big.Int).Abs(denominator)
 	quotient, remainder := new(big.Int).QuoRem(absoluteNumerator, absoluteDenominator, new(big.Int))
 	twiceRemainder := new(big.Int).Lsh(remainder, 1)
-	if twiceRemainder.Cmp(absoluteDenominator) > 0 ||
-		(twiceRemainder.Cmp(absoluteDenominator) == 0 &&
-			((residualDirection != 0 && residualDirection == signOf(negative)) ||
-				quotient.Bit(0) == 1)) {
+	roundUp := twiceRemainder.Cmp(absoluteDenominator) > 0
+	if twiceRemainder.Cmp(absoluteDenominator) == 0 {
+		switch {
+		case residualDirection == signOf(negative):
+			roundUp = true
+		case residualDirection == -signOf(negative):
+			roundUp = false
+		default:
+			roundUp = quotient.Bit(0) == 1
+		}
+	}
+	if roundUp {
 		quotient.Add(quotient, big.NewInt(1))
 	}
 	if negative {
