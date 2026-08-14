@@ -31,10 +31,21 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type PortfolioServiceClient interface {
+	// These status mappings describe the gRPC surface only:
 	// NOT_FOUND when the account/symbol has no lots.
 	// FAILED_PRECONDITION when the net quantity is not positive
 	// ("no open position"), matching the legacy ValueError path.
-	// INVALID_ARGUMENT when `mark` is not a parseable decimal.
+	// INVALID_ARGUMENT when account_id or symbol is blank, or when a
+	// caller-supplied `mark` is not a parseable decimal, including Infinity
+	// and sNaN, or when caller-supplied mark quantization exceeds the 28-digit
+	// decimal context precision. The latter is the P18 precision-overflow path.
+	// INTERNAL when the store fails or stored position data cannot be
+	// represented at the 28-digit decimal context precision.
+	//
+	// The legacy REST surface preserves HTTP 500 for closed positions,
+	// unparseable marks, rejected Infinity/sNaN, and precision overflow. A shim
+	// translating gRPC to REST must not "improve" those paths to HTTP 400 or
+	// another status.
 	GetPosition(ctx context.Context, in *GetPositionRequest, opts ...grpc.CallOption) (*Position, error)
 }
 
@@ -60,10 +71,21 @@ func (c *portfolioServiceClient) GetPosition(ctx context.Context, in *GetPositio
 // All implementations must embed UnimplementedPortfolioServiceServer
 // for forward compatibility.
 type PortfolioServiceServer interface {
+	// These status mappings describe the gRPC surface only:
 	// NOT_FOUND when the account/symbol has no lots.
 	// FAILED_PRECONDITION when the net quantity is not positive
 	// ("no open position"), matching the legacy ValueError path.
-	// INVALID_ARGUMENT when `mark` is not a parseable decimal.
+	// INVALID_ARGUMENT when account_id or symbol is blank, or when a
+	// caller-supplied `mark` is not a parseable decimal, including Infinity
+	// and sNaN, or when caller-supplied mark quantization exceeds the 28-digit
+	// decimal context precision. The latter is the P18 precision-overflow path.
+	// INTERNAL when the store fails or stored position data cannot be
+	// represented at the 28-digit decimal context precision.
+	//
+	// The legacy REST surface preserves HTTP 500 for closed positions,
+	// unparseable marks, rejected Infinity/sNaN, and precision overflow. A shim
+	// translating gRPC to REST must not "improve" those paths to HTTP 400 or
+	// another status.
 	GetPosition(context.Context, *GetPositionRequest) (*Position, error)
 	mustEmbedUnimplementedPortfolioServiceServer()
 }

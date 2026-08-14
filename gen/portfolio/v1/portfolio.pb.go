@@ -114,7 +114,13 @@ type GetPositionRequest struct {
 
 	AccountId string `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	Symbol    string `protobuf:"bytes,2,opt,name=symbol,proto3" json:"symbol,omitempty"` // case-insensitive; normalized to upper case
-	Mark      string `protobuf:"bytes,3,opt,name=mark,proto3" json:"mark,omitempty"`     // decimal string mark price; empty means "0"
+	// Decimal() compatibility applies at this boundary: Infinity and sNaN are
+	// rejected, while quiet NaN propagates into unrealized_pnl.
+	// On gRPC, an empty mark means "0" because proto3 cannot represent
+	// absence separately from an empty string. A REST-to-gRPC shim must reject
+	// a present-but-empty ?mark= with the legacy HTTP 500 instead of forwarding
+	// it as an empty field.
+	Mark string `protobuf:"bytes,3,opt,name=mark,proto3" json:"mark,omitempty"` // decimal string mark price
 }
 
 func (x *GetPositionRequest) Reset() {
