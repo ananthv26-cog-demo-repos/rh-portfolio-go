@@ -229,7 +229,7 @@ func TestResidualDirectionOpposingNegativeValueRoundsTowardZero(t *testing.T) {
 	}
 }
 
-func TestResidualDirectionOpposingOddQuotientRoundsTowardZero(t *testing.T) {
+func TestResidualDirectionOpposingOddQuotientMatchesContextRounding(t *testing.T) {
 	mark, err := Parse("0.005" + strings.Repeat("0", 80) + "1")
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +242,25 @@ func TestResidualDirectionOpposingOddQuotientRoundsTowardZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "-0.01" {
-		t.Fatalf("odd opposing residual = %q, want -0.01", got)
+	if got != "-0.02" {
+		t.Fatalf("context-rounded odd opposing residual = %q, want -0.02", got)
+	}
+}
+
+func TestArithmeticRoundsResidualBeforeQuantize(t *testing.T) {
+	mark, err := Parse("2.680" + strings.Repeat("0", 80) + "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cost, err := Parse("2.675000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := mark.Sub(cost).StringFixed(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "0.00" {
+		t.Fatalf("context-rounded tie = %q, want 0.00", got)
 	}
 }

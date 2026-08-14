@@ -191,13 +191,13 @@ func (d Decimal) Add(other Decimal) Decimal {
 	left := scaledCoefficient(d, scale)
 	right := scaledCoefficient(other, scale)
 	left.Add(left, right)
-	return Decimal{
+	return roundToPrecision(Decimal{
 		coefficient:       left,
 		scale:             scale,
 		negativeZero:      left.Sign() == 0 && d.negativeZero && other.coefficient.Sign() == 0,
 		residualDirection: combineResidual(d.residualDirection, other.residualDirection),
 		precisionOverflow: d.precisionOverflow || other.precisionOverflow,
-	}
+	})
 }
 
 func (d Decimal) Sub(other Decimal) Decimal {
@@ -211,24 +211,24 @@ func (d Decimal) Sub(other Decimal) Decimal {
 	left := scaledCoefficient(d, scale)
 	right := scaledCoefficient(other, scale)
 	left.Sub(left, right)
-	return Decimal{
+	return roundToPrecision(Decimal{
 		coefficient:       left,
 		scale:             scale,
 		negativeZero:      left.Sign() == 0 && d.negativeZero && other.coefficient.Sign() == 0 && !other.negativeZero,
 		residualDirection: combineResidual(d.residualDirection, -other.residualDirection),
 		precisionOverflow: d.precisionOverflow || other.precisionOverflow,
-	}
+	})
 }
 
 func (d Decimal) MulInt64(value int64) Decimal {
 	coefficient := new(big.Int).Mul(d.coefficient, big.NewInt(value))
-	return Decimal{
+	return roundToPrecision(Decimal{
 		coefficient:       coefficient,
 		scale:             d.scale,
 		negativeZero:      d.negativeZero && value > 0 || !d.negativeZero && d.coefficient.Sign() == 0 && value < 0,
 		residualDirection: multiplyResidual(d.residualDirection, value),
 		precisionOverflow: d.precisionOverflow && value != 0,
-	}
+	})
 }
 
 func (d Decimal) Quantize(scale int) (Decimal, error) {
@@ -258,13 +258,8 @@ func (d Decimal) DivideQuantized(divisor int64, scale int) (Decimal, error) {
 	if d.precisionOverflow {
 		return Decimal{}, ErrPrecision
 	}
-	numerator := new(big.Int).Mul(d.coefficient, tenTo(scale))
-	denominator := new(big.Int).Mul(big.NewInt(divisor), tenTo(d.scale))
-	if denominator.Sign() < 0 {
-		numerator.Neg(numerator)
-		denominator.Neg(denominator)
-	}
-	return roundRatio(numerator, denominator, scale, d.residualDirection, d.negativeZero)
+	value := divideToPrecision(d, divisor)
+	return value.Quantize(scale)
 }
 
 func (d Decimal) StringFixed(scale int) (string, error) {
@@ -362,6 +357,10 @@ func tenTo(scale int) *big.Int {
 }
 
 func roundRatio(numerator, denominator *big.Int, scale int, residualDirection int8, negativeZero bool) (Decimal, error) {
+	return checkPrecision(roundRatioRaw(numerator, denominator, scale, residualDirection, negativeZero))
+}
+
+func roundRatioRaw(numerator, denominator *big.Int, scale int, residualDirection int8, negativeZero bool) Decimal {
 	if denominator.Sign() == 0 {
 		panic("division by zero")
 	}
@@ -387,11 +386,93 @@ func roundRatio(numerator, denominator *big.Int, scale int, residualDirection in
 	if negative {
 		quotient.Neg(quotient)
 	}
-	return checkPrecision(Decimal{
+	return Decimal{
 		coefficient:  quotient,
 		scale:        scale,
 		negativeZero: (negative && quotient.Sign() == 0) || (quotient.Sign() == 0 && negativeZero),
-	})
+	}
+}
+
+func roundToPrecision(value Decimal) Decimal {
+	if value.precisionOverflow {
+		return value
+	}
+	if value.coefficient.Sign() == 0 {
+		value.residualDirection = 0
+		return value
+	}
+	digits := len(new(big.Int).Abs(value.coefficient).String())
+	if digits <= pythonDecimalPrecision {
+		value.residualDirection = 0
+		return value
+	}
+	targetScale := value.scale - (digits - pythonDecimalPrecision)
+	rounded := roundRatioRaw(
+		value.coefficient,
+		tenTo(digits-pythonDecimalPrecision),
+		targetScale,
+		value.residualDirection,
+		value.negativeZero,
+	)
+	rounded.residualDirection = 0
+	if rounded.scale < 0 {
+		rounded.coefficient.Mul(rounded.coefficient, tenTo(-rounded.scale))
+		rounded.scale = 0
+	}
+	return rounded
+}
+
+func divideToPrecision(value Decimal, divisor int64) Decimal {
+	if value.precisionOverflow {
+		return value
+	}
+	if value.coefficient.Sign() == 0 {
+		return Decimal{coefficient: big.NewInt(0), negativeZero: value.negativeZero}
+	}
+	numerator := new(big.Int).Abs(value.coefficient)
+	denominator := new(big.Int).Abs(big.NewInt(divisor))
+	digitsNumerator := len(numerator.String())
+	digitsDenominator := len(denominator.String())
+	delta := digitsNumerator - digitsDenominator
+	adjustedExponent := delta - value.scale
+	if delta >= 0 {
+		if numerator.Cmp(new(big.Int).Mul(denominator, tenTo(delta))) < 0 {
+			adjustedExponent--
+		}
+	} else if new(big.Int).Mul(numerator, tenTo(-delta)).Cmp(denominator) < 0 {
+		adjustedExponent--
+	}
+	targetScale := pythonDecimalPrecision - adjustedExponent - 1
+	if targetScale > maxRetainedScale {
+		negative := value.coefficient.Sign() < 0
+		if divisor < 0 {
+			negative = !negative
+		}
+		return Decimal{
+			coefficient:  big.NewInt(0),
+			scale:        maxRetainedScale,
+			negativeZero: value.negativeZero || negative,
+		}
+	}
+	denominator.Mul(denominator, tenTo(value.scale))
+	if targetScale >= 0 {
+		numerator.Mul(numerator, tenTo(targetScale))
+	} else {
+		denominator.Mul(denominator, tenTo(-targetScale))
+	}
+	if value.coefficient.Sign() < 0 {
+		numerator.Neg(numerator)
+	}
+	if divisor < 0 {
+		numerator.Neg(numerator)
+	}
+	rounded := roundRatioRaw(numerator, denominator, targetScale, value.residualDirection, value.negativeZero)
+	rounded.residualDirection = 0
+	if rounded.scale < 0 {
+		rounded.coefficient.Mul(rounded.coefficient, tenTo(-rounded.scale))
+		rounded.scale = 0
+	}
+	return rounded
 }
 
 func residualSign(coefficient *big.Int, negative bool) int8 {

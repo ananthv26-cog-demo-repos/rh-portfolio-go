@@ -46,8 +46,8 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 			return
 		}
 		rawMark := "0"
-		if values, present := request.URL.Query()["mark"]; present {
-			rawMark = values[len(values)-1]
+		if value, present := lastMarkValue(request.URL.RawQuery); present {
+			rawMark = value
 		}
 		mark, err := money.ParseMark(rawMark)
 		if err != nil {
@@ -97,6 +97,60 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write(body)
+	}
+}
+
+func lastMarkValue(rawQuery string) (string, bool) {
+	var value string
+	present := false
+	for _, pair := range strings.Split(rawQuery, "&") {
+		key, rawValue := pair, ""
+		if index := strings.IndexByte(pair, '='); index >= 0 {
+			key, rawValue = pair[:index], pair[index+1:]
+		}
+		if queryUnescape(key) == "mark" {
+			value = queryUnescape(rawValue)
+			present = true
+		}
+	}
+	return value, present
+}
+
+func queryUnescape(value string) string {
+	var decoded strings.Builder
+	decoded.Grow(len(value))
+	for index := 0; index < len(value); index++ {
+		switch value[index] {
+		case '+':
+			decoded.WriteByte(' ')
+		case '%':
+			if index+2 < len(value) {
+				high, highOK := fromHex(value[index+1])
+				low, lowOK := fromHex(value[index+2])
+				if highOK && lowOK {
+					decoded.WriteByte(high<<4 | low)
+					index += 2
+					continue
+				}
+			}
+			decoded.WriteByte('%')
+		default:
+			decoded.WriteByte(value[index])
+		}
+	}
+	return decoded.String()
+}
+
+func fromHex(value byte) (byte, bool) {
+	switch {
+	case value >= '0' && value <= '9':
+		return value - '0', true
+	case value >= 'a' && value <= 'f':
+		return value - 'a' + 10, true
+	case value >= 'A' && value <= 'F':
+		return value - 'A' + 10, true
+	default:
+		return 0, false
 	}
 }
 

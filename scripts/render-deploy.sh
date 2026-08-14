@@ -12,8 +12,8 @@ if [[ ! -f "$template_root/Dockerfile.tmpl" || ! -f "$template_root/deploy.yaml.
   exit 1
 fi
 
-mkdir -p deploy
+mkdir -p "$repo_root/deploy"
 sed -e "s/{{SERVICE_NAME}}/$service_name/g" -e "s/{{PORT}}/$render_port/g" \
-  "$template_root/Dockerfile.tmpl" > Dockerfile
+  "$template_root/Dockerfile.tmpl" > "$repo_root/Dockerfile"
 sed -e "s/{{SERVICE_NAME}}/$service_name/g" -e "s/{{PORT}}/$render_port/g" \
-  "$template_root/deploy.yaml.tmpl" > deploy/deploy.yaml
+  "$template_root/deploy.yaml.tmpl" > "$repo_root/deploy/deploy.yaml"

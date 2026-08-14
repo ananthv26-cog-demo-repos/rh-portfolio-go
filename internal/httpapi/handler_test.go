@@ -118,6 +118,40 @@ func TestRepeatedMarkUsesLastValue(t *testing.T) {
 	}
 }
 
+func TestMarkQueryDecodingMatchesDjango(t *testing.T) {
+	price, _ := money.Parse("19.990000")
+	handler := NewHandler(&store.MemoryStore{Positions: map[string][]domain.Lot{
+		"acct-p1\x00HOOD": {{Quantity: 10, Price: price}},
+	}})
+	tests := []struct {
+		name   string
+		query  string
+		status int
+		body   string
+	}{
+		{"invalid percent escape", "?mark=%zz", http.StatusInternalServerError, ""},
+		{"semicolon stays in value", "?mark=1;2", http.StatusInternalServerError, ""},
+		{"repeated invalid percent escape", "?mark=1&mark=%zz", http.StatusInternalServerError, ""},
+		{"plus decodes to whitespace", "?mark=+20.00", http.StatusOK, `"unrealized_pnl":"0.10"`},
+		{"encoded plus remains a sign", "?mark=%2B20.00", http.StatusOK, `"unrealized_pnl":"0.10"`},
+		{"unrelated parameter is ignored", "?other=1&mark=20.00&x=2", http.StatusOK, `"unrealized_pnl":"0.10"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet,
+				"/v1/portfolio/acct-p1/HOOD/"+test.query, nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+			if test.body != "" && !strings.Contains(response.Body.String(), test.body) {
+				t.Fatalf("body = %q, want substring %q", response.Body.String(), test.body)
+			}
+		})
+	}
+}
+
 func TestRedirectPreservesEscapedPath(t *testing.T) {
 	handler := NewHandler(&store.MemoryStore{})
 	request := httptest.NewRequest(http.MethodGet,
