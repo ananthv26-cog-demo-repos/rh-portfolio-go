@@ -165,8 +165,9 @@ func TestRedirectPreservesEscapedPath(t *testing.T) {
 		t.Fatalf("Location = %q", got)
 	}
 	for header, want := range map[string]string{
-		"X-Content-Type-Options": "nosniff",
-		"Referrer-Policy":        "same-origin",
+		"X-Content-Type-Options":     "nosniff",
+		"Referrer-Policy":            "same-origin",
+		"Cross-Origin-Opener-Policy": "same-origin",
 	} {
 		if got := response.Header().Get(header); got != want {
 			t.Fatalf("%s = %q, want %q", header, got, want)
