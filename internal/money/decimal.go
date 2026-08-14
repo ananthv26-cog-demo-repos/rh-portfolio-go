@@ -223,7 +223,7 @@ func (d Decimal) Add(other Decimal) Decimal {
 	return roundToPrecision(Decimal{
 		coefficient:       left,
 		scale:             scale,
-		negativeZero:      left.Sign() == 0 && d.negativeZero && other.coefficient.Sign() == 0,
+		negativeZero:      left.Sign() == 0 && d.negativeZero && other.negativeZero,
 		residualDirection: combineResidual(d.residualDirection, other.residualDirection),
 		precisionOverflow: d.precisionOverflow || other.precisionOverflow,
 	})
@@ -251,10 +251,11 @@ func (d Decimal) Sub(other Decimal) Decimal {
 
 func (d Decimal) MulInt64(value int64) Decimal {
 	coefficient := new(big.Int).Mul(d.coefficient, big.NewInt(value))
+	negative := d.coefficient.Sign() < 0 || d.negativeZero
 	return roundToPrecision(Decimal{
 		coefficient:       coefficient,
 		scale:             d.scale,
-		negativeZero:      d.negativeZero && value > 0 || !d.negativeZero && d.coefficient.Sign() == 0 && value < 0,
+		negativeZero:      coefficient.Sign() == 0 && negative != (value < 0),
 		residualDirection: multiplyResidual(d.residualDirection, value),
 		precisionOverflow: d.precisionOverflow && value != 0,
 	})

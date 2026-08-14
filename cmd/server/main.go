@@ -82,7 +82,16 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = httpServer.Shutdown(ctx)
-	grpcServer.GracefulStop()
+	grpcDone := make(chan struct{})
+	go func() {
+		grpcServer.GracefulStop()
+		close(grpcDone)
+	}()
+	select {
+	case <-grpcDone:
+	case <-ctx.Done():
+		grpcServer.Stop()
+	}
 	return serveErr
 }
 

@@ -260,9 +260,10 @@ func TestUnknownPositionMethodMatrixMatchesDjango(t *testing.T) {
 func assertRoutedHeaders(t *testing.T, response *httptest.ResponseRecorder) {
 	t.Helper()
 	for header, want := range map[string]string{
-		"Vary":                   "Accept",
-		"X-Content-Type-Options": "nosniff",
-		"Referrer-Policy":        "same-origin",
+		"Vary":                       "Accept",
+		"X-Content-Type-Options":     "nosniff",
+		"Referrer-Policy":            "same-origin",
+		"Cross-Origin-Opener-Policy": "same-origin",
 	} {
 		if got := response.Header().Get(header); got != want {
 			t.Fatalf("%s = %q, want %q", header, got, want)

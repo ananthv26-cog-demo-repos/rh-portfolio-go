@@ -70,7 +70,7 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 		}
 		averageCost, err := domain.AverageCost(lots)
 		if err != nil {
-			writeError(writer, http.StatusInternalServerError, err.Error())
+			writeError(writer, http.StatusInternalServerError, "invalid position")
 			return
 		}
 		pnl := mark.NaNString()
@@ -135,6 +135,7 @@ func setRoutedHeaders(writer http.ResponseWriter) {
 	writer.Header().Set("Vary", "Accept")
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
 	writer.Header().Set("Referrer-Policy", "same-origin")
+	writer.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 }
 
 func lastMarkValue(rawQuery string) (string, bool) {

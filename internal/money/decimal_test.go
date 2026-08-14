@@ -159,6 +159,56 @@ func TestUnrealizedPnlPrecisionWindow(t *testing.T) {
 	}
 }
 
+func TestSignedZeroArithmetic(t *testing.T) {
+	tests := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"negative zero plus zero", mustDecimalString(t, "-0", 0, false), "0"},
+		{"zero plus negative zero", mustDecimalString(t, "0", 0, true), "0"},
+		{"negative zero plus negative zero", mustDecimalString(t, "-0", 0, true), "-0"},
+		{"negative zero minus zero", mustDecimalString(t, "-0", 1, false), "-0"},
+		{"negative five times zero", mustDecimalString(t, "-5", 2, false), "-0"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.got != test.want {
+				t.Fatalf("result = %q, want %q", test.got, test.want)
+			}
+		})
+	}
+}
+
+func mustDecimalString(t *testing.T, input string, operation int, otherNegativeZero bool) string {
+	t.Helper()
+	value, err := Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch operation {
+	case 0:
+		other := Decimal{}
+		if otherNegativeZero {
+			other, err = Parse("-0")
+		} else {
+			other, err = Parse("0")
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value.Add(other).String()
+	case 1:
+		other, err := Parse("0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value.Sub(other).String()
+	default:
+		return value.MulInt64(0).String()
+	}
+}
+
 func TestParseMarkRejectsInvalidNaNPayloads(t *testing.T) {
 	for _, input := range []string{"sNaN12", "-sNaN", "NaN12x", "NaN_12", "NaN12_"} {
 		t.Run(input, func(t *testing.T) {
