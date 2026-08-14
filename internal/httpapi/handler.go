@@ -45,9 +45,9 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 			writer.WriteHeader(http.StatusNotFound)
 			return
 		}
-		rawMark := request.URL.Query().Get("mark")
-		if rawMark == "" {
-			rawMark = "0"
+		rawMark := "0"
+		if values, present := request.URL.Query()["mark"]; present {
+			rawMark = values[0]
 		}
 		mark, err := money.ParseMark(rawMark)
 		if err != nil {

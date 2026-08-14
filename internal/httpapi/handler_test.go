@@ -58,3 +58,31 @@ func TestUnknownPositionPrecedesInvalidMark(t *testing.T) {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
 	}
 }
+
+func TestMarkPresenceDistinguishesAbsentAndEmpty(t *testing.T) {
+	price, _ := money.Parse("19.990000")
+	handler := NewHandler(&store.MemoryStore{Positions: map[string][]domain.Lot{
+		"acct-p1\x00HOOD": {{Quantity: 10, Price: price}},
+	}})
+	tests := []struct {
+		name   string
+		query  string
+		status int
+	}{
+		{"absent defaults to zero", "", http.StatusOK},
+		{"present but empty", "?mark=", http.StatusInternalServerError},
+		{"bare parameter", "?mark", http.StatusInternalServerError},
+		{"invalid value", "?mark=abc", http.StatusInternalServerError},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet,
+				"/v1/portfolio/acct-p1/HOOD/"+test.query, nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+		})
+	}
+}
