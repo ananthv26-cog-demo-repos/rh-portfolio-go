@@ -87,6 +87,36 @@ func TestMarkPresenceDistinguishesAbsentAndEmpty(t *testing.T) {
 	}
 }
 
+func TestUnicodeDecimalMarkHandling(t *testing.T) {
+	price, _ := money.Parse("19.990000")
+	handler := NewHandler(&store.MemoryStore{Positions: map[string][]domain.Lot{
+		"acct-p1\x00HOOD": {{Quantity: 10, Price: price}},
+	}})
+	tests := []struct {
+		name   string
+		mark   string
+		status int
+		body   string
+	}{
+		{"fullwidth digits", "２０", http.StatusOK, `"unrealized_pnl":"0.10"`},
+		{"circled number rejected", "①", http.StatusInternalServerError, ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet,
+				"/v1/portfolio/acct-p1/HOOD/?mark="+test.mark, nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+			if test.body != "" && !strings.Contains(response.Body.String(), test.body) {
+				t.Fatalf("body = %q, want substring %q", response.Body.String(), test.body)
+			}
+		})
+	}
+}
+
 func TestRepeatedMarkUsesLastValue(t *testing.T) {
 	price, _ := money.Parse("19.990000")
 	handler := NewHandler(&store.MemoryStore{Positions: map[string][]domain.Lot{

@@ -1,6 +1,9 @@
 package money
 
 import (
+	"bufio"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -94,6 +97,87 @@ func TestParseMarkPythonDecimalSurface(t *testing.T) {
 			}
 			if got := mark.Value.String(); got != test.want {
 				t.Fatalf("String() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestDecimalDigitMatchesCPythonUnicodeDecimalTable(t *testing.T) {
+	file, err := os.Open("testdata/unicode_decimal_digits.tsv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		if strings.HasPrefix(scanner.Text(), "#") {
+			continue
+		}
+		fields := strings.Split(scanner.Text(), "\t")
+		if len(fields) != 2 {
+			t.Fatalf("malformed golden row %q", scanner.Text())
+		}
+		codePoint, err := strconv.ParseInt(strings.TrimPrefix(fields[0], "U+"), 16, 32)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := strconv.Atoi(fields[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, ok := decimalDigit(rune(codePoint))
+		if !ok || got != want {
+			t.Fatalf("decimalDigit(%s) = (%d, %t), want (%d, true)",
+				fields[0], got, ok, want)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestParseMarkUnicodeDecimalDigits(t *testing.T) {
+	price, _ := Parse("19.990000")
+	tests := []struct {
+		name string
+		mark string
+		want string
+	}{
+		{"fullwidth", "２０", "0.10"},
+		{"arabic indic", "٢٠", "0.10"},
+		{"mathematical sans", "𝟚𝟘", "0.10"},
+		{"mixed script", "２0.5", "5.10"},
+		{"unicode exponent", "１e２", "800.10"},
+		{"unicode underscore neighbour", "１_０", "-99.90"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mark, err := ParseMark(test.mark)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := mark.Value.Sub(price).MulInt64(10).StringFixed(2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("unrealized P&L = %q, want %q", got, test.want)
+			}
+		})
+	}
+	t.Run("NaN payload", func(t *testing.T) {
+		mark, err := ParseMark("NaN２")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := mark.NaNString(); got != "NaN2" {
+			t.Fatalf("NaNString() = %q, want %q", got, "NaN2")
+		}
+	})
+	for _, input := range []string{"①", "2．5", "＋２０"} {
+		t.Run("reject "+input, func(t *testing.T) {
+			if _, err := ParseMark(input); err == nil {
+				t.Fatalf("ParseMark(%q) unexpectedly succeeded", input)
 			}
 		})
 	}

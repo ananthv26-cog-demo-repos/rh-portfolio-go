@@ -50,6 +50,24 @@ func TestGetPositionPayloadNaN(t *testing.T) {
 	}
 }
 
+func TestGetPositionUnicodeDecimalMark(t *testing.T) {
+	price, _ := money.Parse("19.990000")
+	server := &Server{Store: &store.MemoryStore{Positions: map[string][]domain.Lot{
+		"acct\x00HOOD": {{Quantity: 10, Price: price}},
+	}}}
+	position, err := server.GetPosition(context.Background(), &portfoliov1.GetPositionRequest{
+		AccountId: "acct",
+		Symbol:    "HOOD",
+		Mark:      "２０",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := position.GetUnrealizedPnl(); got != "0.10" {
+		t.Fatalf("unrealized_pnl = %q, want %q", got, "0.10")
+	}
+}
+
 func TestGetPositionPreservesIdentifierWhitespace(t *testing.T) {
 	price, _ := money.Parse("19.990000")
 	server := &Server{Store: &store.MemoryStore{Positions: map[string][]domain.Lot{

@@ -51,7 +51,9 @@ func ParseMark(text string) (Mark, error) {
 		if !validDigitSeparators(payloadText) {
 			return Mark{}, ErrInvalidDecimal
 		}
-		payload, ok := new(big.Int).SetString(strings.ReplaceAll(payloadText, "_", ""), 10)
+		payloadText, _ = normalizeDigitSeparators(payloadText)
+		payloadText = strings.ReplaceAll(payloadText, "_", "")
+		payload, ok := new(big.Int).SetString(payloadText, 10)
 		if !ok {
 			return Mark{}, ErrInvalidDecimal
 		}
@@ -109,7 +111,7 @@ func Parse(text string) (Decimal, error) {
 	if strings.Count(text, ".") > 1 {
 		return Decimal{}, ErrInvalidDecimal
 	}
-	if !strings.ContainsAny(strings.ReplaceAll(text, "_", ""), "0123456789") {
+	if !containsDecimalDigit(text) {
 		return Decimal{}, ErrInvalidDecimal
 	}
 	parts := strings.SplitN(text, ".", 2)
@@ -126,6 +128,8 @@ func Parse(text string) (Decimal, error) {
 	if !validDigitSeparators(whole) || !validDigitSeparators(fraction) {
 		return Decimal{}, ErrInvalidDecimal
 	}
+	whole, _ = normalizeDigitSeparators(whole)
+	fraction, _ = normalizeDigitSeparators(fraction)
 	whole = strings.ReplaceAll(whole, "_", "")
 	fraction = strings.ReplaceAll(fraction, "_", "")
 	digits := strings.TrimLeft(whole+fraction, "0")
@@ -338,19 +342,50 @@ func checkPrecision(value Decimal) (Decimal, error) {
 }
 
 func validDigitSeparators(value string) bool {
-	for index, char := range value {
+	runes := []rune(value)
+	for index, char := range runes {
 		if char == '_' {
-			if index == 0 || index == len(value)-1 || value[index-1] < '0' || value[index-1] > '9' ||
-				value[index+1] < '0' || value[index+1] > '9' {
+			if index == 0 || index == len(runes)-1 {
+				return false
+			}
+			if _, ok := decimalDigit(runes[index-1]); !ok {
+				return false
+			}
+			if _, ok := decimalDigit(runes[index+1]); !ok {
 				return false
 			}
 			continue
 		}
-		if char < '0' || char > '9' {
+		if _, ok := decimalDigit(char); !ok {
 			return false
 		}
 	}
 	return true
+}
+
+func normalizeDigitSeparators(value string) (string, bool) {
+	var normalized strings.Builder
+	for _, char := range value {
+		if char == '_' {
+			normalized.WriteByte('_')
+			continue
+		}
+		digit, ok := decimalDigit(char)
+		if !ok {
+			return "", false
+		}
+		normalized.WriteByte(byte('0' + digit))
+	}
+	return normalized.String(), true
+}
+
+func containsDecimalDigit(value string) bool {
+	for _, char := range value {
+		if _, ok := decimalDigit(char); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func parseExponent(value string) (*big.Int, bool) {
@@ -367,6 +402,7 @@ func parseExponent(value string) (*big.Int, bool) {
 	if !validDigitSeparators(value) {
 		return nil, false
 	}
+	value, _ = normalizeDigitSeparators(value)
 	value = strings.ReplaceAll(value, "_", "")
 	exponent := new(big.Int)
 	if _, ok := exponent.SetString(value, 10); !ok {
