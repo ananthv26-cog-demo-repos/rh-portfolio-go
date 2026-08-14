@@ -10,6 +10,8 @@ import (
 	"github.com/ananthv26-cog-demo-repos/rh-portfolio-go/internal/store"
 )
 
+const maxQueryFields = 1000 // Django DATA_UPLOAD_MAX_NUMBER_FIELDS.
+
 func NewHandler(positionStore store.PositionStore) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(writer http.ResponseWriter, _ *http.Request) {
@@ -22,6 +24,11 @@ func NewHandler(positionStore store.PositionStore) http.Handler {
 
 func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.RawQuery != "" &&
+			strings.Count(request.URL.RawQuery, "&")+1 > maxQueryFields {
+			writeError(writer, http.StatusInternalServerError, "invalid mark")
+			return
+		}
 		if redirectPath, ok := redirectPath(request.URL.EscapedPath(), request.URL.Path); ok {
 			if request.URL.RawQuery != "" {
 				redirectPath += "?" + request.URL.RawQuery

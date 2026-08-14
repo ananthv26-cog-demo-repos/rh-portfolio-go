@@ -118,6 +118,60 @@ func TestRepeatedMarkUsesLastValue(t *testing.T) {
 	}
 }
 
+func TestQueryFieldLimit(t *testing.T) {
+	price, _ := money.Parse("19.990000")
+	handler := NewHandler(&store.MemoryStore{Positions: map[string][]domain.Lot{
+		"acct-p1\x00HOOD": {{Quantity: 10, Price: price}},
+	}})
+	tests := []struct {
+		name   string
+		path   string
+		method string
+		status int
+	}{
+		{
+			name:   "at limit",
+			path:   "/v1/portfolio/acct-p1/HOOD/?mark=20.00" + strings.Repeat("&", 999),
+			method: http.MethodGet,
+			status: http.StatusOK,
+		},
+		{
+			name:   "over limit",
+			path:   "/v1/portfolio/acct-p1/HOOD/?mark=20.00" + strings.Repeat("&", 1000),
+			method: http.MethodGet,
+			status: http.StatusInternalServerError,
+		},
+		{
+			name:   "over limit precedes redirect",
+			path:   "/v1/portfolio/acct-p1/HOOD?mark=20.00" + strings.Repeat("&", 1000),
+			method: http.MethodGet,
+			status: http.StatusInternalServerError,
+		},
+		{
+			name:   "over limit precedes not found",
+			path:   "/v1/portfolio/acct-p1/NOPE/?mark=20.00" + strings.Repeat("&", 1000),
+			method: http.MethodGet,
+			status: http.StatusInternalServerError,
+		},
+		{
+			name:   "over limit precedes method dispatch",
+			path:   "/v1/portfolio/acct-p1/HOOD/?mark=20.00" + strings.Repeat("&", 1000),
+			method: http.MethodPost,
+			status: http.StatusInternalServerError,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, test.path, nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+		})
+	}
+}
+
 func TestMarkQueryDecodingMatchesDjango(t *testing.T) {
 	price, _ := money.Parse("19.990000")
 	handler := NewHandler(&store.MemoryStore{Positions: map[string][]domain.Lot{
