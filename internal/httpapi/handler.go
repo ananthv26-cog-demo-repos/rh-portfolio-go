@@ -27,6 +27,8 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 				redirectPath += "?" + request.URL.RawQuery
 			}
 			writer.Header().Set("Location", redirectPath)
+			writer.Header().Set("X-Content-Type-Options", "nosniff")
+			writer.Header().Set("Referrer-Policy", "same-origin")
 			writer.WriteHeader(http.StatusMovedPermanently)
 			return
 		}

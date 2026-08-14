@@ -164,6 +164,17 @@ func TestRedirectPreservesEscapedPath(t *testing.T) {
 	if got := response.Header().Get("Location"); got != "/v1/portfolio/acct%20x/HOOD/?mark=1" {
 		t.Fatalf("Location = %q", got)
 	}
+	for header, want := range map[string]string{
+		"X-Content-Type-Options": "nosniff",
+		"Referrer-Policy":        "same-origin",
+	} {
+		if got := response.Header().Get(header); got != want {
+			t.Fatalf("%s = %q, want %q", header, got, want)
+		}
+	}
+	if got := response.Header().Get("Vary"); got != "" {
+		t.Fatalf("Vary = %q, want empty", got)
+	}
 }
 
 func TestPositionMethodMatrixMatchesDjango(t *testing.T) {
