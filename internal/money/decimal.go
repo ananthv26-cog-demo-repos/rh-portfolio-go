@@ -2,7 +2,6 @@ package money
 
 import (
 	"errors"
-	"fmt"
 	"math/big"
 	"strings"
 )
@@ -16,7 +15,34 @@ type Decimal struct {
 	negativeZero bool
 }
 
+type Mark struct {
+	Value       Decimal
+	NaN         bool
+	NegativeNaN bool
+}
+
+func ParseMark(text string) (Mark, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return Mark{}, ErrInvalidDecimal
+	}
+	sign := byte(0)
+	if text[0] == '-' || text[0] == '+' {
+		sign, text = text[0], text[1:]
+	}
+	switch strings.ToLower(text) {
+	case "nan":
+		return Mark{NaN: true, NegativeNaN: sign == '-'}, nil
+	case "snan", "inf", "infinity":
+		return Mark{}, ErrInvalidDecimal
+	default:
+		value, err := Parse(stringWithSign(sign, text))
+		return Mark{Value: value}, err
+	}
+}
+
 func Parse(text string) (Decimal, error) {
+	text = strings.TrimSpace(text)
 	if text == "" {
 		return Decimal{}, ErrInvalidDecimal
 	}
@@ -25,7 +51,22 @@ func Parse(text string) (Decimal, error) {
 		negative = text[0] == '-'
 		text = text[1:]
 	}
-	if text == "" || strings.Count(text, ".") > 1 {
+	if text == "" {
+		return Decimal{}, ErrInvalidDecimal
+	}
+	exponent := 0
+	if index := strings.IndexAny(text, "eE"); index >= 0 {
+		if strings.IndexAny(text[index+1:], "eE") >= 0 {
+			return Decimal{}, ErrInvalidDecimal
+		}
+		var ok bool
+		exponent, ok = parseExponent(text[index+1:])
+		if !ok {
+			return Decimal{}, ErrInvalidDecimal
+		}
+		text = text[:index]
+	}
+	if strings.Count(text, ".") > 1 {
 		return Decimal{}, ErrInvalidDecimal
 	}
 	parts := strings.SplitN(text, ".", 2)
@@ -36,9 +77,14 @@ func Parse(text string) (Decimal, error) {
 	if whole == "" {
 		whole = "0"
 	}
-	if !allDigits(whole) || !allDigits(fraction) {
+	if len(parts) == 2 && parts[0] == "" && parts[1] == "" {
 		return Decimal{}, ErrInvalidDecimal
 	}
+	if !validDigitSeparators(whole) || !validDigitSeparators(fraction) {
+		return Decimal{}, ErrInvalidDecimal
+	}
+	whole = strings.ReplaceAll(whole, "_", "")
+	fraction = strings.ReplaceAll(fraction, "_", "")
 	digits := strings.TrimLeft(whole+fraction, "0")
 	if digits == "" {
 		digits = "0"
@@ -50,7 +96,19 @@ func Parse(text string) (Decimal, error) {
 	if negative {
 		coefficient.Neg(coefficient)
 	}
-	return Decimal{coefficient: coefficient, scale: len(fraction), negativeZero: negative && coefficient.Sign() == 0}, nil
+	scale := len(fraction) - exponent
+	if scale < 0 {
+		coefficient.Mul(coefficient, tenTo(-scale))
+		scale = 0
+	}
+	return Decimal{coefficient: coefficient, scale: scale}, nil
+}
+
+func stringWithSign(sign byte, value string) string {
+	if sign == 0 {
+		return value
+	}
+	return string(sign) + value
 }
 
 func (d Decimal) Add(other Decimal) Decimal {
@@ -61,25 +119,29 @@ func (d Decimal) Add(other Decimal) Decimal {
 	left := scaledCoefficient(d, scale)
 	right := scaledCoefficient(other, scale)
 	left.Add(left, right)
-	return Decimal{coefficient: left, scale: scale, negativeZero: left.Sign() == 0 && (d.negativeZero || other.negativeZero)}
+	return Decimal{coefficient: left, scale: scale}
 }
 
 func (d Decimal) Sub(other Decimal) Decimal {
-	negated := other
-	negated.coefficient = new(big.Int).Neg(other.coefficient)
-	negated.negativeZero = !other.negativeZero
-	return d.Add(negated)
+	scale := d.scale
+	if other.scale > scale {
+		scale = other.scale
+	}
+	left := scaledCoefficient(d, scale)
+	right := scaledCoefficient(other, scale)
+	left.Sub(left, right)
+	return Decimal{coefficient: left, scale: scale}
 }
 
 func (d Decimal) MulInt64(value int64) Decimal {
 	coefficient := new(big.Int).Mul(d.coefficient, big.NewInt(value))
-	return Decimal{coefficient: coefficient, scale: d.scale, negativeZero: coefficient.Sign() == 0 && (d.negativeZero != (value < 0))}
+	return Decimal{coefficient: coefficient, scale: d.scale}
 }
 
 func (d Decimal) Quantize(scale int) Decimal {
 	if scale >= d.scale {
 		coefficient := new(big.Int).Mul(d.coefficient, tenTo(scale-d.scale))
-		return Decimal{coefficient: coefficient, scale: scale, negativeZero: coefficient.Sign() == 0 && d.negativeZero}
+		return Decimal{coefficient: coefficient, scale: scale, negativeZero: d.negativeZero}
 	}
 	return roundRatio(d.coefficient, tenTo(d.scale-scale), scale)
 }
@@ -123,13 +185,42 @@ func (d Decimal) String() string {
 	return d.StringFixed(d.scale)
 }
 
-func allDigits(value string) bool {
-	for _, char := range value {
+func validDigitSeparators(value string) bool {
+	for index, char := range value {
+		if char == '_' {
+			if index == 0 || index == len(value)-1 || value[index-1] < '0' || value[index-1] > '9' ||
+				value[index+1] < '0' || value[index+1] > '9' {
+				return false
+			}
+			continue
+		}
 		if char < '0' || char > '9' {
 			return false
 		}
 	}
 	return true
+}
+
+func parseExponent(value string) (int, bool) {
+	if value == "" {
+		return 0, false
+	}
+	sign := 1
+	if value[0] == '+' || value[0] == '-' {
+		if value[0] == '-' {
+			sign = -1
+		}
+		value = value[1:]
+	}
+	if !validDigitSeparators(value) {
+		return 0, false
+	}
+	value = strings.ReplaceAll(value, "_", "")
+	exponent := new(big.Int)
+	if _, ok := exponent.SetString(value, 10); !ok || !exponent.IsInt64() {
+		return 0, false
+	}
+	return sign * int(exponent.Int64()), true
 }
 
 func scaledCoefficient(value Decimal, scale int) *big.Int {
@@ -157,8 +248,4 @@ func roundRatio(numerator, denominator *big.Int, scale int) Decimal {
 		quotient.Neg(quotient)
 	}
 	return Decimal{coefficient: quotient, scale: scale, negativeZero: negative && quotient.Sign() == 0}
-}
-
-func (d Decimal) GoString() string {
-	return fmt.Sprintf("Decimal{%s}", d.String())
 }

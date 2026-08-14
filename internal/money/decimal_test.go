@@ -39,3 +39,58 @@ func TestDivideQuantizedHalfEven(t *testing.T) {
 		t.Fatalf("got %s", got)
 	}
 }
+
+func TestParseMarkPythonDecimalSurface(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		want       string
+		wantNaN    bool
+		wantNegNaN bool
+	}{
+		{name: "exponent", input: "2e1", want: "20"},
+		{name: "whitespace", input: "  20.00  ", want: "20.00"},
+		{name: "plus sign", input: "+20.00", want: "20.00"},
+		{name: "underscores", input: "1_0", want: "10"},
+		{name: "nan", input: "NaN", want: "NaN", wantNaN: true},
+		{name: "negative nan", input: "-nAn", want: "-NaN", wantNaN: true, wantNegNaN: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mark, err := ParseMark(test.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mark.NaN != test.wantNaN || mark.NegativeNaN != test.wantNegNaN {
+				t.Fatalf("mark = %+v", mark)
+			}
+			if test.wantNaN {
+				return
+			}
+			if got := mark.Value.String(); got != test.want {
+				t.Fatalf("String() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestParseMarkRejectsNonFiniteValues(t *testing.T) {
+	for _, input := range []string{"Infinity", "-Infinity", "sNaN", "+sNaN"} {
+		t.Run(input, func(t *testing.T) {
+			if _, err := ParseMark(input); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}
+
+func TestNegativeZeroOnlyComesFromRounding(t *testing.T) {
+	value, _ := Parse("-0.0002")
+	if got := value.StringFixed(2); got != "-0.00" {
+		t.Fatalf("rounded negative zero = %q", got)
+	}
+	zero, _ := Parse("0")
+	if got := zero.Sub(zero).StringFixed(2); got != "0.00" {
+		t.Fatalf("exact zero = %q", got)
+	}
+}

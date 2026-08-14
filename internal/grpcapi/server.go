@@ -25,7 +25,7 @@ func (s *Server) GetPosition(ctx context.Context, request *portfoliov1.GetPositi
 	if markText == "" {
 		markText = "0"
 	}
-	mark, err := money.Parse(markText)
+	mark, err := money.ParseMark(markText)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "mark must be a decimal")
 	}
@@ -45,6 +45,16 @@ func (s *Server) GetPosition(ctx context.Context, request *portfoliov1.GetPositi
 		Symbol:        symbol,
 		Quantity:      domain.NetQuantity(lots),
 		AverageCost:   averageCost.StringFixed(4),
-		UnrealizedPnl: domain.UnrealizedPnL(lots, mark).StringFixed(2),
+		UnrealizedPnl: unrealizedPnl(lots, mark),
 	}, nil
+}
+
+func unrealizedPnl(lots []domain.Lot, mark money.Mark) string {
+	if mark.NaN {
+		if mark.NegativeNaN {
+			return "-NaN"
+		}
+		return "NaN"
+	}
+	return domain.UnrealizedPnL(lots, mark.Value).StringFixed(2)
 }

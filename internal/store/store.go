@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/ananthv26-cog-demo-repos/rh-portfolio-go/internal/domain"
@@ -57,5 +56,3 @@ func (s *PostgresStore) Lots(ctx context.Context, accountID, symbol string) ([]d
 	}
 	return lots, nil
 }
-
-var ErrStoreUnavailable = errors.New("store unavailable")
