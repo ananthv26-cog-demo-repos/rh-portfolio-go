@@ -26,7 +26,7 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.RawQuery != "" &&
 			strings.Count(request.URL.RawQuery, "&")+1 > maxQueryFields {
-			writeError(writer, http.StatusInternalServerError, "invalid mark")
+			writeError(writer, http.StatusInternalServerError, "too many query fields")
 			return
 		}
 		if redirectPath, ok := redirectPath(request.URL.EscapedPath(), request.URL.Path); ok {
