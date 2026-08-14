@@ -1,0 +1,30 @@
+# Golden-path EKS manifest — rendered per service; do not hand-write.
+# Org standards to fill: IRSA serviceAccountName, ALB ingress annotations.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rh-portfolio-go
+  labels: {app: "rh-portfolio-go", paved-road: "go-service/v1"}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: "rh-portfolio-go"}}
+  template:
+    metadata: {labels: {app: "rh-portfolio-go"}}
+    spec:
+      containers:
+        - name: server
+          image: "rh-portfolio-go:{{VERSION}}"
+          ports: [{containerPort: 8081}]
+          readinessProbe: {httpGet: {path: /healthz, port: 8081}}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rh-portfolio-go
+  labels: {paved-road: "go-service/v1"}
+spec:
+  selector: {app: "rh-portfolio-go"}
+  ports: [{port: 80, targetPort: 8081}]
