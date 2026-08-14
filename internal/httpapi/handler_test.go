@@ -178,6 +178,35 @@ func TestRedirectPreservesEscapedPath(t *testing.T) {
 	}
 }
 
+func TestEscapedSlashUsesDecodedPathForRouting(t *testing.T) {
+	price, _ := money.Parse("19.990000")
+	handler := NewHandler(&store.MemoryStore{Positions: map[string][]domain.Lot{
+		"acct-p1\x00HOOD": {{Quantity: 10, Price: price}},
+	}})
+	tests := []struct {
+		name   string
+		path   string
+		status int
+	}{
+		{"encoded slash in account", "/v1/portfolio/a%2Fb/HOOD", http.StatusNotFound},
+		{"encoded slash in symbol", "/v1/portfolio/acct-p1/HOOD%2F", http.StatusOK},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, test.path, nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+			if response.Code != http.StatusMovedPermanently &&
+				response.Header().Get("Location") != "" {
+				t.Fatalf("unexpected redirect location %q", response.Header().Get("Location"))
+			}
+		})
+	}
+}
+
 func TestPositionMethodMatrixMatchesDjango(t *testing.T) {
 	price, _ := money.Parse("19.990000")
 	handler := NewHandler(&store.MemoryStore{Positions: map[string][]domain.Lot{

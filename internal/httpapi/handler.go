@@ -22,7 +22,7 @@ func NewHandler(positionStore store.PositionStore) http.Handler {
 
 func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		if redirectPath, ok := redirectPath(request.URL.EscapedPath()); ok {
+		if redirectPath, ok := redirectPath(request.URL.EscapedPath(), request.URL.Path); ok {
 			if request.URL.RawQuery != "" {
 				redirectPath += "?" + request.URL.RawQuery
 			}
@@ -128,7 +128,10 @@ func writeMethodNotAllowed(writer http.ResponseWriter, method string) {
 	setRoutedHeaders(writer)
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusMethodNotAllowed)
-	_, _ = writer.Write([]byte("{\"detail\":\"Method \\\"" + method + "\\\" not allowed.\"}"))
+	body, _ := json.Marshal(struct {
+		Detail string `json:"detail"`
+	}{Detail: `Method "` + method + `" not allowed.`})
+	_, _ = writer.Write(body)
 }
 
 func setRoutedHeaders(writer http.ResponseWriter) {
@@ -192,16 +195,16 @@ func fromHex(value byte) (byte, bool) {
 	}
 }
 
-func redirectPath(path string) (string, bool) {
+func redirectPath(escapedPath, decodedPath string) (string, bool) {
 	const prefix = "/v1/portfolio/"
-	if !strings.HasPrefix(path, prefix) || strings.HasSuffix(path, "/") {
+	if !strings.HasPrefix(decodedPath, prefix) || strings.HasSuffix(decodedPath, "/") {
 		return "", false
 	}
-	parts := strings.Split(strings.TrimPrefix(path, prefix), "/")
+	parts := strings.Split(strings.TrimPrefix(decodedPath, prefix), "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return "", false
 	}
-	return path + "/", true
+	return escapedPath + "/", true
 }
 
 func parsePath(path string) (string, string, bool) {

@@ -13,7 +13,7 @@ if [[ ! -f "$template_root/Dockerfile.tmpl" || ! -f "$template_root/deploy.yaml.
 fi
 
 mkdir -p "$repo_root/deploy"
-sed -e "s/{{SERVICE_NAME}}/$service_name/g" -e "s/{{PORT}}/$render_port/g" \
+sed -e "s|{{SERVICE_NAME}}|$service_name|g" -e "s|{{PORT}}|$render_port|g" \
   "$template_root/Dockerfile.tmpl" > "$repo_root/Dockerfile"
-sed -e "s/{{SERVICE_NAME}}/$service_name/g" -e "s/{{PORT}}/$render_port/g" \
+sed -e "s|{{SERVICE_NAME}}|$service_name|g" -e "s|{{PORT}}|$render_port|g" \
   "$template_root/deploy.yaml.tmpl" > "$repo_root/deploy/deploy.yaml"

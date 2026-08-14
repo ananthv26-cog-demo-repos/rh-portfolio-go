@@ -35,7 +35,9 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
-	if err := pool.Ping(context.Background()); err != nil {
+	pingCtx, cancelPing := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelPing()
+	if err := pool.Ping(pingCtx); err != nil {
 		return err
 	}
 
