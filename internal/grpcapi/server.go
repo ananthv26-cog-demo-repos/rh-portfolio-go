@@ -24,8 +24,8 @@ func (s *Server) GetPosition(ctx context.Context, request *portfoliov1.GetPositi
 	if request == nil || strings.TrimSpace(request.GetAccountId()) == "" || strings.TrimSpace(request.GetSymbol()) == "" {
 		return nil, status.Error(codes.InvalidArgument, "account_id and symbol are required")
 	}
-	accountID := strings.TrimSpace(request.GetAccountId())
-	symbol := strings.ToUpper(strings.TrimSpace(request.GetSymbol()))
+	accountID := request.GetAccountId()
+	symbol := strings.ToUpper(request.GetSymbol())
 	lots, err := s.Store.Lots(ctx, accountID, symbol)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "store error")

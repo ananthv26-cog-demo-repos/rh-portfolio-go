@@ -20,7 +20,7 @@ func TestGetPosition(t *testing.T) {
 
 	position, err := server.GetPosition(context.Background(), &portfoliov1.GetPositionRequest{
 		AccountId: "acct",
-		Symbol:    " hood ",
+		Symbol:    "HOOD",
 		Mark:      "20",
 	})
 	if err != nil {
@@ -50,20 +50,28 @@ func TestGetPositionPayloadNaN(t *testing.T) {
 	}
 }
 
-func TestGetPositionTrimsAccountID(t *testing.T) {
+func TestGetPositionPreservesIdentifierWhitespace(t *testing.T) {
 	price, _ := money.Parse("19.990000")
 	server := &Server{Store: &store.MemoryStore{Positions: map[string][]domain.Lot{
 		"acct\x00HOOD": {{Quantity: 10, Price: price}},
 	}}}
-	position, err := server.GetPosition(context.Background(), &portfoliov1.GetPositionRequest{
+	_, err := server.GetPosition(context.Background(), &portfoliov1.GetPositionRequest{
 		AccountId: " acct ",
 		Symbol:    "HOOD",
 	})
-	if err != nil {
-		t.Fatal(err)
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("whitespace-preserving lookup code = %s", status.Code(err))
 	}
-	if position.GetSymbol() != "HOOD" {
-		t.Fatalf("symbol = %q", position.GetSymbol())
+}
+
+func TestGetPositionRejectsWhitespaceOnlyIdentifiers(t *testing.T) {
+	server := &Server{Store: &store.MemoryStore{}}
+	_, err := server.GetPosition(context.Background(), &portfoliov1.GetPositionRequest{
+		AccountId: " \t",
+		Symbol:    "HOOD",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("whitespace-only account code = %s", status.Code(err))
 	}
 }
 

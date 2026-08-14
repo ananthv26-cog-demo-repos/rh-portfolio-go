@@ -127,6 +127,38 @@ func TestParseMarkPayloadNaNs(t *testing.T) {
 	}
 }
 
+func TestUnrealizedPnlPrecisionWindow(t *testing.T) {
+	price, _ := Parse("2.675")
+	tests := []struct {
+		mark string
+		want string
+	}{
+		{"1e-400", "-2.68"},
+		{"0", "-2.68"},
+		{"-1e-400", "-2.68"},
+		{"1e-90", "-2.68"},
+		{"1e-27", "-2.67"},
+		{"1e-26", "-2.67"},
+		{"1e-29", "-2.68"},
+		{"1e-85", "-2.68"},
+	}
+	for _, test := range tests {
+		t.Run(test.mark, func(t *testing.T) {
+			mark, err := ParseMark(test.mark)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := mark.Value.Sub(price).StringFixed(2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("unrealized P&L = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestParseMarkRejectsInvalidNaNPayloads(t *testing.T) {
 	for _, input := range []string{"sNaN12", "-sNaN", "NaN12x", "NaN_12", "NaN12_"} {
 		t.Run(input, func(t *testing.T) {
