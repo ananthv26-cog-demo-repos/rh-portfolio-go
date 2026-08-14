@@ -59,26 +59,31 @@ func run() error {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signals)
+	serveErrors := make(chan error, 2)
 
 	go func() {
 		log.Printf("HTTP listening on %s", httpServer.Addr)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("HTTP server error: %v", err)
+			serveErrors <- err
 		}
 	}()
 	go func() {
 		log.Printf("gRPC listening on %s", grpcListener.Addr())
 		if err := grpcServer.Serve(grpcListener); err != nil {
-			log.Printf("gRPC server error: %v", err)
+			serveErrors <- err
 		}
 	}()
 
-	<-signals
+	var serveErr error
+	select {
+	case <-signals:
+	case serveErr = <-serveErrors:
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = httpServer.Shutdown(ctx)
 	grpcServer.GracefulStop()
-	return nil
+	return serveErr
 }
 
 func getenv(key, fallback string) string {
