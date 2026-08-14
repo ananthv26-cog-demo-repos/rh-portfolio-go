@@ -24,11 +24,6 @@ func NewHandler(positionStore store.PositionStore) http.Handler {
 
 func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.RawQuery != "" &&
-			strings.Count(request.URL.RawQuery, "&")+1 > maxQueryFields {
-			writeError(writer, http.StatusInternalServerError, "too many query fields")
-			return
-		}
 		if redirectPath, ok := redirectPath(request.URL.EscapedPath(), request.URL.Path); ok {
 			if request.URL.RawQuery != "" {
 				redirectPath += "?" + request.URL.RawQuery
@@ -41,6 +36,11 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 		accountID, symbol, ok := parsePath(request.URL.Path)
 		if !ok {
 			http.NotFound(writer, request)
+			return
+		}
+		if request.URL.RawQuery != "" &&
+			strings.Count(request.URL.RawQuery, "&")+1 > maxQueryFields {
+			writeError(writer, http.StatusInternalServerError, "too many query fields")
 			return
 		}
 		setRoutedHeaders(writer)
