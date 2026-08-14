@@ -174,7 +174,7 @@ func Parse(text string) (Decimal, error) {
 		nonzero := coefficient.Sign() != 0
 		direction := int8(0)
 		if nonzero {
-			direction = residualSign(coefficient, negative)
+			direction = residualSign(coefficient)
 		}
 		digitLength := len(new(big.Int).Abs(coefficient).String())
 		if drop >= digitLength {
@@ -496,7 +496,12 @@ func divideToPrecision(value Decimal, divisor int64) Decimal {
 	if divisor < 0 {
 		numerator.Neg(numerator)
 	}
-	rounded := roundRatioRaw(numerator, denominator, targetScale, value.residualDirection, value.negativeZero)
+	residualDirection := value.residualDirection
+	if divisor < 0 {
+		residualDirection = -residualDirection
+	}
+	rounded := roundRatioRaw(numerator, denominator, targetScale,
+		residualDirection, value.negativeZero)
 	rounded.residualDirection = 0
 	if rounded.scale < 0 {
 		rounded.coefficient.Mul(rounded.coefficient, tenTo(-rounded.scale))
@@ -505,13 +510,7 @@ func divideToPrecision(value Decimal, divisor int64) Decimal {
 	return rounded
 }
 
-func residualSign(coefficient *big.Int, negative bool) int8 {
-	if coefficient.Sign() == 0 {
-		if negative {
-			return -1
-		}
-		return 1
-	}
+func residualSign(coefficient *big.Int) int8 {
 	if coefficient.Sign() < 0 {
 		return -1
 	}
