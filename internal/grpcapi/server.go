@@ -69,10 +69,7 @@ func (s *Server) GetPosition(ctx context.Context, request *portfoliov1.GetPositi
 
 func unrealizedPnl(lots []domain.Lot, mark money.Mark) (string, error) {
 	if mark.NaN {
-		if mark.NegativeNaN {
-			return "-NaN", nil
-		}
-		return "NaN", nil
+		return mark.NaNString(), nil
 	}
 	if _, err := domain.TotalCost(lots).Quantize(2); errors.Is(err, money.ErrPrecision) {
 		return "", errStoredPositionPrecision

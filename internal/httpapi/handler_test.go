@@ -200,6 +200,7 @@ func TestPositionMethodMatrixMatchesDjango(t *testing.T) {
 			if got := response.Header().Get("Allow"); got != "GET, HEAD, OPTIONS" {
 				t.Fatalf("Allow = %q", got)
 			}
+			assertRoutedHeaders(t, response)
 			if test.method == http.MethodGet || test.method == http.MethodHead ||
 				test.method == http.MethodOptions || test.status == http.StatusMethodNotAllowed {
 				if got := response.Header().Get("Content-Type"); got != "application/json" {
@@ -239,6 +240,20 @@ func TestUnknownPositionMethodMatrixMatchesDjango(t *testing.T) {
 			if got := response.Header().Get("Allow"); got != "GET, HEAD, OPTIONS" {
 				t.Fatalf("Allow = %q", got)
 			}
+			assertRoutedHeaders(t, response)
 		})
+	}
+}
+
+func assertRoutedHeaders(t *testing.T, response *httptest.ResponseRecorder) {
+	t.Helper()
+	for header, want := range map[string]string{
+		"Vary":                   "Accept",
+		"X-Content-Type-Options": "nosniff",
+		"Referrer-Policy":        "same-origin",
+	} {
+		if got := response.Header().Get(header); got != want {
+			t.Fatalf("%s = %q, want %q", header, got, want)
+		}
 	}
 }

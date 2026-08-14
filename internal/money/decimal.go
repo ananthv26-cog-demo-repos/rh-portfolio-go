@@ -30,6 +30,7 @@ type Mark struct {
 	Value       Decimal
 	NaN         bool
 	NegativeNaN bool
+	NaNPayload  *big.Int
 }
 
 func ParseMark(text string) (Mark, error) {
@@ -41,15 +42,43 @@ func ParseMark(text string) (Mark, error) {
 	if text[0] == '-' || text[0] == '+' {
 		sign, text = text[0], text[1:]
 	}
-	switch strings.ToLower(text) {
-	case "nan":
-		return Mark{NaN: true, NegativeNaN: sign == '-'}, nil
+	lower := strings.ToLower(text)
+	if strings.HasPrefix(lower, "nan") {
+		payloadText := text[3:]
+		if payloadText == "" {
+			return Mark{NaN: true, NegativeNaN: sign == '-'}, nil
+		}
+		if !validDigitSeparators(payloadText) {
+			return Mark{}, ErrInvalidDecimal
+		}
+		payload, ok := new(big.Int).SetString(strings.ReplaceAll(payloadText, "_", ""), 10)
+		if !ok {
+			return Mark{}, ErrInvalidDecimal
+		}
+		payload.Mod(payload, tenTo(pythonDecimalPrecision))
+		return Mark{NaN: true, NegativeNaN: sign == '-', NaNPayload: payload}, nil
+	}
+	switch lower {
 	case "snan", "inf", "infinity":
 		return Mark{}, ErrInvalidDecimal
 	default:
 		value, err := Parse(stringWithSign(sign, text))
 		return Mark{Value: value}, err
 	}
+}
+
+func (m Mark) NaNString() string {
+	if !m.NaN {
+		return ""
+	}
+	text := "NaN"
+	if m.NaNPayload != nil && m.NaNPayload.Sign() != 0 {
+		text += m.NaNPayload.String()
+	}
+	if m.NegativeNaN {
+		return "-" + text
+	}
+	return text
 }
 
 func Parse(text string) (Decimal, error) {

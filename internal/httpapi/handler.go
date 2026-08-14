@@ -35,6 +35,7 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 			http.NotFound(writer, request)
 			return
 		}
+		setRoutedHeaders(writer)
 		writer.Header().Set("Allow", "GET, HEAD, OPTIONS")
 		switch request.Method {
 		case http.MethodGet, http.MethodHead:
@@ -69,7 +70,7 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 			writeError(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
-		pnl := "NaN"
+		pnl := mark.NaNString()
 		if !mark.NaN {
 			pnlValue, err := domain.UnrealizedPnL(lots, mark.Value)
 			if err != nil {
@@ -81,8 +82,6 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 				writeError(writer, http.StatusInternalServerError, "invalid mark")
 				return
 			}
-		} else if mark.NegativeNaN {
-			pnl = "-NaN"
 		}
 		response := struct {
 			Symbol        string `json:"symbol"`
@@ -115,6 +114,7 @@ func positionHandler(positionStore store.PositionStore) http.HandlerFunc {
 }
 
 func writeOptions(writer http.ResponseWriter) {
+	setRoutedHeaders(writer)
 	writer.Header().Set("Allow", "GET, HEAD, OPTIONS")
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
@@ -122,9 +122,16 @@ func writeOptions(writer http.ResponseWriter) {
 }
 
 func writeMethodNotAllowed(writer http.ResponseWriter, method string) {
+	setRoutedHeaders(writer)
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusMethodNotAllowed)
 	_, _ = writer.Write([]byte("{\"detail\":\"Method \\\"" + method + "\\\" not allowed.\"}"))
+}
+
+func setRoutedHeaders(writer http.ResponseWriter) {
+	writer.Header().Set("Vary", "Accept")
+	writer.Header().Set("X-Content-Type-Options", "nosniff")
+	writer.Header().Set("Referrer-Policy", "same-origin")
 }
 
 func lastMarkValue(rawQuery string) (string, bool) {

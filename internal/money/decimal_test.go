@@ -99,6 +99,44 @@ func TestParseMarkPythonDecimalSurface(t *testing.T) {
 	}
 }
 
+func TestParseMarkPayloadNaNs(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"NaN", "NaN"},
+		{"NaN123", "NaN123"},
+		{"nan123", "NaN123"},
+		{"-NaN007", "-NaN7"},
+		{"NaN0", "NaN"},
+		{"+NaN12", "NaN12"},
+		{"nan1_2", "NaN12"},
+		{"NaN123456789012345678901234567890", "NaN3456789012345678901234567890"},
+		{"NaN10000000000000000000000000000", "NaN"},
+	}
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			mark, err := ParseMark(test.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := mark.NaNString(); got != test.want {
+				t.Fatalf("NaNString() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestParseMarkRejectsInvalidNaNPayloads(t *testing.T) {
+	for _, input := range []string{"sNaN12", "-sNaN", "NaN12x", "NaN_12", "NaN12_"} {
+		t.Run(input, func(t *testing.T) {
+			if _, err := ParseMark(input); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}
+
 func TestParseMarkRejectsNonFiniteValues(t *testing.T) {
 	for _, input := range []string{"Infinity", "-Infinity", "sNaN", "+sNaN"} {
 		t.Run(input, func(t *testing.T) {

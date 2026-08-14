@@ -32,6 +32,24 @@ func TestGetPosition(t *testing.T) {
 	}
 }
 
+func TestGetPositionPayloadNaN(t *testing.T) {
+	price, _ := money.Parse("19.990000")
+	server := &Server{Store: &store.MemoryStore{Positions: map[string][]domain.Lot{
+		"acct\x00HOOD": {{Quantity: 10, Price: price}},
+	}}}
+	position, err := server.GetPosition(context.Background(), &portfoliov1.GetPositionRequest{
+		AccountId: "acct",
+		Symbol:    "HOOD",
+		Mark:      "-NaN007",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := position.GetUnrealizedPnl(); got != "-NaN7" {
+		t.Fatalf("unrealized_pnl = %q, want %q", got, "-NaN7")
+	}
+}
+
 func TestGetPositionTrimsAccountID(t *testing.T) {
 	price, _ := money.Parse("19.990000")
 	server := &Server{Store: &store.MemoryStore{Positions: map[string][]domain.Lot{
